@@ -599,15 +599,17 @@ class MySpinLink(private val ctx: Context, private val log: (String) -> Unit) {
             switchMode(Mode.MENU, out)
             return
         }
-        // Android Auto: OK dziala dopiero po puszczeniu; przytrzymanie >= 800 ms = powrot do menu SmartGT
-        if (mode == Mode.ANDROID_AUTO && key == 12) {
+        // Android Auto: joystick w lewo dziala dopiero po puszczeniu; przytrzymanie >= 800 ms = powrot do menu SmartGT
+        // (krotkie klikniecie = DPAD_LEFT w AA). OK dziala normalnie.
+        if (mode == Mode.ANDROID_AUTO && key == 32) {
+            if (action == 3) { leftDownMs = 0; switchMode(Mode.MENU, out); return }
             val now = System.currentTimeMillis()
-            if (action == 1) okDownMs = now
+            if (action == 1) leftDownMs = now
             else if (action == 2) {
-                if (okDownMs == 0L) return  // puszczenie OK, ktore zaczelo sie jeszcze w menu
-                val held = now - okDownMs
-                okDownMs = 0
-                if (held >= 800) switchMode(Mode.MENU, out) else onSourceKey(12, out)
+                if (leftDownMs == 0L) return  // puszczenie z poprzedniego ekranu
+                val held = now - leftDownMs
+                leftDownMs = 0
+                if (held >= 800) switchMode(Mode.MENU, out) else onSourceKey(32, out)
             }
             return
         }
@@ -813,7 +815,7 @@ class MySpinLink(private val ctx: Context, private val log: (String) -> Unit) {
     }
 
     private var lastBackMs = 0L
-    @Volatile private var okDownMs = 0L
+    @Volatile private var leftDownMs = 0L
 
     /** WSTECZ z motocykla: poza menu wraca do menu; w Android Auto: raz = Wstecz w AA, dwa razy szybko = menu. */
     private fun onBackButton(out: OutputStream) {
@@ -901,7 +903,7 @@ class MySpinLink(private val ctx: Context, private val log: (String) -> Unit) {
             }
             p.color = Color.LTGRAY; p.textSize = 18f
             c.drawText(
-                if (mode == Mode.ANDROID_AUTO) "Przytrzymaj OK (1 s) – powrót do menu"
+                if (mode == Mode.ANDROID_AUTO) "Przytrzymaj joystick w lewo (1 s) – powrót do menu"
                 else "Joystick w lewo lub OK – powrót do menu",
                 30f, (screenHeight - 25).toFloat(), p
             )
