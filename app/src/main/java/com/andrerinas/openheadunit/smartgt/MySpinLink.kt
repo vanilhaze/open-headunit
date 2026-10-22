@@ -599,6 +599,17 @@ class MySpinLink(private val ctx: Context, private val log: (String) -> Unit) {
             switchMode(Mode.MENU, out)
             return
         }
+        // Android Auto: OK dziala dopiero po puszczeniu; przytrzymanie >= 800 ms = powrot do menu SmartGT
+        if (mode == Mode.ANDROID_AUTO && key == 12) {
+            val now = System.currentTimeMillis()
+            if (action == 1) okDownMs = now
+            else if (action == 2) {
+                val held = if (okDownMs > 0) now - okDownMs else 0
+                okDownMs = 0
+                if (held >= 800) switchMode(Mode.MENU, out) else onSourceKey(12, out)
+            }
+            return
+        }
         if (action != 1) return
         if (mode != Mode.MENU) { onSourceKey(key, out); return }
         val mapped = when (key) { 31, 20 -> 1; 30, 21 -> 2; 33 -> 3; 32 -> 4; 12 -> 5; else -> 0 }
@@ -776,7 +787,12 @@ class MySpinLink(private val ctx: Context, private val log: (String) -> Unit) {
 
     /** Zdarzenia z manetki poza menu. Tu trafią później AA (D-pad) i odtwarzacz wideo. */
     private fun onSourceKey(key: Int, out: OutputStream) {
-        if (mode != Mode.ANDROID_AUTO) { log("ŹRÓDŁO($mode): klawisz $key (jeszcze nieobsługiwany)"); return }
+        if (mode != Mode.ANDROID_AUTO) {
+            // Ekranowy WSTECZ obsluguje sam motocykl (nie dociera do aplikacji), wiec wracamy joystickiem.
+            if (key == 32 || key == 12) switchMode(Mode.MENU, out)
+            else log("ŹRÓDŁO($mode): klawisz $key (jeszcze nieobsługiwany)")
+            return
+        }
         val android = when (key) {
             30, 21 -> 19   // DPAD_UP  (joystick gora / pokretlo CCW)
             31, 20 -> 20   // DPAD_DOWN
@@ -796,6 +812,7 @@ class MySpinLink(private val ctx: Context, private val log: (String) -> Unit) {
     }
 
     private var lastBackMs = 0L
+    @Volatile private var okDownMs = 0L
 
     /** WSTECZ z motocykla: poza menu wraca do menu; w Android Auto: raz = Wstecz w AA, dwa razy szybko = menu. */
     private fun onBackButton(out: OutputStream) {
@@ -874,7 +891,11 @@ class MySpinLink(private val ctx: Context, private val log: (String) -> Unit) {
                 }
             }
             p.color = Color.LTGRAY; p.textSize = 18f
-            c.drawText("Wstecz (przytrzymaj) – powrót do menu", 30f, (screenHeight - 25).toFloat(), p)
+            c.drawText(
+                if (mode == Mode.ANDROID_AUTO) "Przytrzymaj OK (1 s) – powrót do menu"
+                else "Joystick w lewo lub OK – powrót do menu",
+                30f, (screenHeight - 25).toFloat(), p
+            )
             val stream = ByteArrayOutputStream()
             bmp.compress(Bitmap.CompressFormat.JPEG, 75, stream)
             bmp.recycle()
