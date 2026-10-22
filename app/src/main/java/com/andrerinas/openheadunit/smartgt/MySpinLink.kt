@@ -526,12 +526,12 @@ class MySpinLink(private val ctx: Context, private val log: (String) -> Unit) {
                 onFrameRequest(out)
             }
             31 -> {
+                // Przycisk WSTECZ motocykla: ekran wysyla parami [1 1 ..] (nacisniecie) i [2 1 ..] (puszczenie).
                 if (body.size >= 2) {
-                    val keyCode = body[0].toInt() and 0xFF
-                    val state = body[1].toInt() and 0xFF
-                    if (state == 1) {
-                        handleHandlebarJoystick(keyCode, out)
-                    }
+                    val ev = body[0].toInt() and 0xFF
+                    val button = body[1].toInt() and 0xFF
+                    log("PRZYCISK(31): zdarzenie=$ev przycisk=$button")
+                    if (ev == 1) onBackButton(out)
                 }
             }
             67 -> onClientCustomData(out, body)
@@ -793,6 +793,26 @@ class MySpinLink(private val ctx: Context, private val log: (String) -> Unit) {
             cm.sendKey(android, true, null, "smartgt")
             mainHandler.postDelayed({ cm.sendKey(android, false, null, "smartgt") }, 50)
         } catch (e: Exception) { log("AA: blad wysylania klawisza: ${e.message}") }
+    }
+
+    private var lastBackMs = 0L
+
+    /** WSTECZ z motocykla: poza menu wraca do menu; w Android Auto: raz = Wstecz w AA, dwa razy szybko = menu. */
+    private fun onBackButton(out: OutputStream) {
+        val now = System.currentTimeMillis()
+        when (mode) {
+            Mode.MENU -> log("WSTECZ w menu glownym (ekran moze sam zamknac widok telefonu)")
+            Mode.ANDROID_AUTO -> {
+                if (now - lastBackMs < 600) {
+                    lastBackMs = 0
+                    switchMode(Mode.MENU, out)
+                } else {
+                    lastBackMs = now
+                    onSourceKey(14, out)
+                }
+            }
+            else -> switchMode(Mode.MENU, out)
+        }
     }
 
     private fun startAndroidAuto(out: OutputStream) {
