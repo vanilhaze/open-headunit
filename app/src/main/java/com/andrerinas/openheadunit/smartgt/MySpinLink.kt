@@ -604,7 +604,8 @@ class MySpinLink(private val ctx: Context, private val log: (String) -> Unit) {
             val now = System.currentTimeMillis()
             if (action == 1) okDownMs = now
             else if (action == 2) {
-                val held = if (okDownMs > 0) now - okDownMs else 0
+                if (okDownMs == 0L) return  // puszczenie OK, ktore zaczelo sie jeszcze w menu
+                val held = now - okDownMs
                 okDownMs = 0
                 if (held >= 800) switchMode(Mode.MENU, out) else onSourceKey(12, out)
             }
@@ -835,6 +836,14 @@ class MySpinLink(private val ctx: Context, private val log: (String) -> Unit) {
     private fun startAndroidAuto(out: OutputStream) {
         log("AA: start (tryb samodzielny)")
         SmartGtBridge.log = log
+        try {
+            // Wymus poziomy obraz 800x480 (AA domyslnie wybralo pionowe 1080x1920 z rozmiaru telefonu).
+            val st = com.andrerinas.openheadunit.App.provide(ctx).settings
+            st.resolutionId = 1
+            st.screenOrientation = com.andrerinas.openheadunit.utils.Settings.ScreenOrientation.LANDSCAPE
+            SmartGtBridge.readerW = 800; SmartGtBridge.readerH = 480
+            log("AA: ustawiono rozdzielczosc 800x480 i orientacje pozioma")
+        } catch (e: Exception) { log("AA: nie udalo sie ustawic rozdzielczosci: ${e.message}") }
         SmartGtBridge.targetW = screenWidth
         SmartGtBridge.targetH = screenHeight
         SmartGtBridge.enabled = true

@@ -21,6 +21,29 @@ object FileLog {
         }
         shared = File(File(ctx.cacheDir, "shared").apply { mkdirs() }, "smartgt-log.txt")
         write("===== START ${SimpleDateFormat("yyyy-MM-dd HH:mm:ss", Locale.US).format(Date())} =====")
+        logLastExitReasons(ctx)
+        val prev = Thread.getDefaultUncaughtExceptionHandler()
+        Thread.setDefaultUncaughtExceptionHandler { t, e ->
+            try {
+                write("CRASH w watku ${t.name}: ${e.javaClass.name}: ${e.message}")
+                e.stackTrace.take(12).forEach { write("    at $it") }
+                e.cause?.let { c -> write("  przyczyna: ${c.javaClass.name}: ${c.message}") }
+            } catch (_: Throwable) {}
+            prev?.uncaughtException(t, e)
+        }
+    }
+
+    /** Android 11+: dlaczego poprzedni proces zostal zakonczony (crash, native crash, brak pamieci, zabicie...). */
+    private fun logLastExitReasons(ctx: Context) {
+        if (android.os.Build.VERSION.SDK_INT < 30) return
+        try {
+            val am = ctx.getSystemService(android.app.ActivityManager::class.java)
+            val list = am.getHistoricalProcessExitReasons(ctx.packageName, 0, 3)
+            val f = SimpleDateFormat("HH:mm:ss", Locale.US)
+            for (i in list) {
+                write("POPRZEDNI PROCES: ${f.format(Date(i.timestamp))} proces=${i.processName} powod=${i.reason} status=${i.status} opis=${i.description}")
+            }
+        } catch (e: Exception) { write("exit reasons: ${e.message}") }
     }
 
     @Synchronized

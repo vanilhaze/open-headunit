@@ -30,6 +30,8 @@ object SmartGtBridge {
     @Volatile var targetH = 320
     /** true: caly obraz AA z czarnymi pasami; false: przyciecie do wypelnienia. */
     @Volatile var fitContain = true
+    @Volatile var readerW = 800
+    @Volatile var readerH = 480
     @Volatile var log: (String) -> Unit = {}
 
     private const val MIN_INTERVAL_MS = 70L
@@ -44,7 +46,7 @@ object SmartGtBridge {
         reader?.let { return it.surface }
         val t = HandlerThread("smartgt-frames").also { it.start() }
         thread = t
-        val r = ImageReader.newInstance(1280, 720, ImageFormat.YUV_420_888, 3)
+        val r = ImageReader.newInstance(readerW, readerH, ImageFormat.YUV_420_888, 3)
         r.setOnImageAvailableListener({ rd -> handle(rd) }, Handler(t.looper))
         reader = r
         log("MOST: utworzono ImageReader")
@@ -91,12 +93,22 @@ object SmartGtBridge {
             for (c in 0 until w) nv21[o++] = yBuf.get(base + c * yP.pixelStride)
         }
         val uBuf = uP.buffer; val vBuf = vP.buffer
+        val interleaved = vP.pixelStride == 2 && uP.pixelStride == 2
+        val row = ByteArray(w)
         for (r in 0 until h / 2) {
             val uBase = (y0 / 2 + r) * uP.rowStride + (x0 / 2) * uP.pixelStride
             val vBase = (y0 / 2 + r) * vP.rowStride + (x0 / 2) * vP.pixelStride
-            for (c in 0 until w / 2) {
-                nv21[o++] = vBuf.get(vBase + c * vP.pixelStride)
-                nv21[o++] = uBuf.get(uBase + c * uP.pixelStride)
+            if (interleaved) {
+                // bufor V zawiera V U V U... = uklad NV21; kopiujemy calymi wierszami
+                val n = minOf(w, vBuf.limit() - vBase)
+                vBuf.position(vBase)
+                vBuf.get(nv21, o, n)
+                o += w
+            } else {
+                for (c in 0 until w / 2) {
+                    nv21[o++] = vBuf.get(vBase + c * vP.pixelStride)
+                    nv21[o++] = uBuf.get(uBase + c * uP.pixelStride)
+                }
             }
         }
         val full = ByteArrayOutputStream()
