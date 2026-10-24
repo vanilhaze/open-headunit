@@ -26,10 +26,14 @@ object SmartGtBridge {
     @Volatile var onFrame: (() -> Unit)? = null
     @Volatile var latestJpeg: ByteArray? = null
     @Volatile var frameSeq = 0L
+    /** FPS dekodera AA liczony w oknie ~1 s (klatki faktycznie zdekodowane, przed throttlingiem na wysylke). */
+    @Volatile var fps = 0.0
     @Volatile var targetW = 864
     @Volatile var targetH = 320
     /** true: caly obraz AA z czarnymi pasami; false: przyciecie do wypelnienia. */
     @Volatile var fitContain = true
+    /** Naklada licznik FPS w rogu obrazu AA (do testow na motocyklu). */
+    @Volatile var showFpsOverlay = true
     @Volatile var readerW = 800
     @Volatile var readerH = 480
     @Volatile var log: (String) -> Unit = {}
@@ -39,7 +43,14 @@ object SmartGtBridge {
     private var thread: HandlerThread? = null
     private var lastMs = 0L
     private var loggedSize = false
+    private var fpsWindowStartMs = 0L
+    private var fpsWindowCount = 0
+    private var lastFpsLogMs = 0L
     private val paint = Paint(Paint.FILTER_BITMAP_FLAG)
+    private val fpsTextPaint = Paint(Paint.ANTI_ALIAS_FLAG).apply {
+        color = Color.GREEN; textSize = 16f; isFakeBoldText = true
+    }
+    private val fpsBgPaint = Paint().apply { color = Color.argb(160, 0, 0, 0) }
 
     @Synchronized
     fun surface(): Surface {
@@ -71,11 +82,27 @@ object SmartGtBridge {
             val jpeg = toJpeg(img) ?: return
             latestJpeg = jpeg
             frameSeq++
+            updateFps(now)
             onFrame?.invoke()
         } catch (e: Exception) {
             log("MOST: blad klatki: ${e.message}")
         } finally {
             img.close()
+        }
+    }
+
+    private fun updateFps(now: Long) {
+        if (fpsWindowStartMs == 0L) { fpsWindowStartMs = now; fpsWindowCount = 0 }
+        fpsWindowCount++
+        val elapsed = now - fpsWindowStartMs
+        if (elapsed >= 1000) {
+            fps = fpsWindowCount * 1000.0 / elapsed
+            fpsWindowStartMs = now
+            fpsWindowCount = 0
+            if (now - lastFpsLogMs >= 3000) {
+                lastFpsLogMs = now
+                log("MOST: FPS dekodera AA = %.1f".format(fps))
+            }
         }
     }
 
@@ -124,6 +151,12 @@ object SmartGtBridge {
         val left = (tw - dw) / 2; val top = (th - dh) / 2
         c.drawBitmap(src, null, Rect(left, top, left + dw, top + dh), paint)
         src.recycle()
+        if (showFpsOverlay) {
+            val text = "%.1f FPS".format(fps)
+            val tw2 = fpsTextPaint.measureText(text)
+            c.drawRect(2f, 2f, tw2 + 10f, 22f, fpsBgPaint)
+            c.drawText(text, 5f, 17f, fpsTextPaint)
+        }
         val out = ByteArrayOutputStream()
         dst.compress(Bitmap.CompressFormat.JPEG, 72, out)
         dst.recycle()

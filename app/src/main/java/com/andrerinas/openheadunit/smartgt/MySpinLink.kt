@@ -892,8 +892,10 @@ class MySpinLink(private val ctx: Context, private val log: (String) -> Unit) {
                     c.drawText("Połączono z ekranem: OK", 30f, 110f, p)
                     c.drawText("Protokół mySPIN: ${protoMajor}.x   Ekran: ${screenWidth}x${screenHeight}", 30f, 150f, p)
                     c.drawText("Wysłane klatki: $framesSent   Czas sesji: ${sec / 60} min ${sec % 60} s", 30f, 190f, p)
+                    c.drawText("FPS ekranu: %.1f".format(sendFps), 30f, 230f, p)
                 }
                 Mode.ANDROID_AUTO -> {
+                    // Ten ekran (renderModeScreen) rysuje sie tylko, dopoki nie ma jeszcze pierwszej klatki z AA.
                     c.drawText("Łączenie z Android Auto…", 30f, 120f, p)
                     c.drawText("Telefon musi mieć włączony serwer / tryb samodzielny.", 30f, 160f, p)
                 }
@@ -926,6 +928,9 @@ class MySpinLink(private val ctx: Context, private val log: (String) -> Unit) {
     private var lastSendMs = 0L
     @Volatile private var framesSent = 0
     private var lastStatMs = 0L
+    @Volatile private var sendFps = 0.0
+    private var fpsWindowStartMs = 0L
+    private var fpsWindowCount = 0
 
     private fun onFrameRequest(out: OutputStream) {
         pendingReq = true
@@ -955,9 +960,18 @@ class MySpinLink(private val ctx: Context, private val log: (String) -> Unit) {
                     sendFramebufferUpdate(out, it)
                     framesSent++
                     lastSendMs = System.currentTimeMillis()
+                    if (fpsWindowStartMs == 0L) { fpsWindowStartMs = lastSendMs; fpsWindowCount = 0 }
+                    fpsWindowCount++
+                    val fpsElapsed = lastSendMs - fpsWindowStartMs
+                    if (fpsElapsed >= 1000) {
+                        sendFps = fpsWindowCount * 1000.0 / fpsElapsed
+                        fpsWindowStartMs = lastSendMs
+                        fpsWindowCount = 0
+                    }
                     if (lastSendMs - lastStatMs > 5000) {
                         lastStatMs = lastSendMs
-                        log("STAT: klatek=$framesSent, ostatnia=${it.size} B")
+                        log("STAT: klatek=$framesSent, FPS_ekran=%.1f, FPS_AA=%.1f, ostatnia=${it.size} B"
+                            .format(sendFps, SmartGtBridge.fps))
                     }
                 }
             } catch (e: Exception) { log("Wysyłka klatki błąd: ${e.message}") }
