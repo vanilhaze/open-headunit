@@ -278,8 +278,14 @@ object AppLog {
      * this a failed/stuck self-mode launch is invisible anywhere except adb logcat. INFO/DEBUG/
      * VERBOSE are deliberately not forwarded - those can be several lines per frame during a real
      * driving session, which would flood the debug screen for no benefit.
-     * [LogBus.post] is a null check when no one is listening (SmartGxActivity not open), so this is
-     * effectively free the rest of the time.
+     *
+     * [FileLog.write] is what actually lands in the exported smartgx-log.txt a field test shares
+     * back; [LogBus.post] only pushes to a live listener (SmartGxActivity's TextView) while that
+     * screen happens to be open, and is never persisted. The first version of this bridge called
+     * only LogBus.post, so a whole round of on-bike tests came back with zero of these lines even
+     * though the code paths that log them (confirmed by reading the exact commit each APK was
+     * built from) clearly ran - every one of them was shown live, if anyone was staring at the
+     * phone at the time, and then lost. Both are called now so the lines actually reach the file.
      */
     private fun forwardToSmartGxLog(priority: Int, msg: String) {
         val level = when (priority) {
@@ -287,8 +293,13 @@ object AppLog {
             Log.ERROR -> "E"
             else -> return
         }
+        val line = "APPLOG[$level]: $msg"
         try {
-            com.andrerinas.openheadunit.smartgx.LogBus.post("APPLOG[$level]: $msg")
+            com.andrerinas.openheadunit.smartgx.FileLog.write(line)
+        } catch (_: Throwable) {
+        }
+        try {
+            com.andrerinas.openheadunit.smartgx.LogBus.post(line)
         } catch (_: Throwable) {
         }
     }
