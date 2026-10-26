@@ -55,6 +55,35 @@ object SmartGxBridge {
     @Volatile var readerH = 480
     @Volatile var log: (String) -> Unit = {}
 
+    /**
+     * Tells the bridge what Android Auto actually negotiated for its video, once
+     * AapProjectionActivity.onVideoDimensionsChanged() fires. [readerW]/[readerH] is only what we
+     * *asked* AA for (MySpinLink.startAndroidAuto() forces 800x480) - AA does not always honor that
+     * exactly (see the comment there about AA defaulting to portrait 1080x1920 based on the phone's
+     * own screen before our override took effect). Until now the FBO was fixed at readerW/readerH
+     * and drawAndCapture() always rendered a full-bleed quad into it, so any real AA frame whose
+     * size/aspect differed from the assumed 800x480 got silently stretched or squashed to fit -
+     * a real distortion, not just the letterboxing toJpeg() already handles correctly. Resizing the
+     * FBO to the real negotiated size removes that: whatever AA actually sends is captured 1:1,
+     * and toJpeg()'s letterbox math (unchanged) then fits that correctly-proportioned image into
+     * the motorcycle's own screen size (targetW/targetH).
+     */
+    fun onVideoDimensions(width: Int, height: Int) {
+        if (width <= 0 || height <= 0) return
+        val h = handler ?: return
+        h.post {
+            if (width == fboW && height == fboH) return@post
+            try {
+                freeFbo()
+                setupFbo(width, height)
+                log("BRIDGE: resized render target to AA's actual video size ${width}x$height " +
+                        "(we had requested ${readerW}x$readerH)")
+            } catch (e: Exception) {
+                log("BRIDGE: failed to resize render target to ${width}x$height: ${e.message}")
+            }
+        }
+    }
+
     /** Caps the decoder at ~25 FPS (was 70ms / ~14 FPS). Lower further only if the phone keeps up - watch the FPS overlay. */
     private const val MIN_INTERVAL_MS = 40L
 
@@ -260,6 +289,14 @@ object SmartGxBridge {
         fboW = w; fboH = h
         readBuf = ByteBuffer.allocateDirect(w * h * 4).order(ByteOrder.nativeOrder())
         frameBitmap = Bitmap.createBitmap(w, h, Bitmap.Config.ARGB_8888)
+    }
+
+    /** Releases the current FBO/texture/readback buffers so [setupFbo] can rebuild them at a new size. */
+    private fun freeFbo() {
+        if (fbo != 0) { GLES20.glDeleteFramebuffers(1, intArrayOf(fbo), 0); fbo = 0 }
+        if (fboTex != 0) { GLES20.glDeleteTextures(1, intArrayOf(fboTex), 0); fboTex = 0 }
+        readBuf = null
+        frameBitmap?.recycle(); frameBitmap = null
     }
 
     private fun buildProgram(vertexSrc: String, fragmentSrc: String): Int {

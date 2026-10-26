@@ -75,6 +75,8 @@ class SmartGxActivity : Activity() {
         }
         setContentView(root)
         append("SmartGX ready. Turn on BT, Wi-Fi and location, close the official mySPIN app, then press Start.")
+        append("Build: ${com.andrerinas.openheadunit.BuildConfig.GIT_SHA} " +
+                "(compare this against the commit a new APK was built from before reporting a test result)")
         append("Log file: ${getExternalFilesDir(null)}/smartgx-log.txt")
         append("Tip: 'Test AA (no motorcycle)' reproduces the TFT capture pipeline (GL/SmartGxBridge) " +
             "without pairing to the bike - use it to iterate on crashes/rendering from the couch.")
