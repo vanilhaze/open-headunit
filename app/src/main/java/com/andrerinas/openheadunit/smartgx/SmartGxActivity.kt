@@ -23,7 +23,7 @@ import java.text.SimpleDateFormat
 import java.util.Date
 import java.util.Locale
 
-/** Ekran sterujacy SmartGX: Start/Stop uslugi, podglad logu, udostepnianie logu. */
+/** SmartGX control screen: Start/Stop the service, view the log, share the log. */
 class SmartGxActivity : Activity() {
 
     private lateinit var logView: TextView
@@ -38,9 +38,9 @@ class SmartGxActivity : Activity() {
         FileLog.init(this)
         val pad = (12 * resources.displayMetrics.density).toInt()
         startBtn = Button(this).apply { text = "Start"; setOnClickListener { toggle() } }
-        val shareBtn = Button(this).apply { text = "Udostepnij log"; setOnClickListener { shareLog() } }
+        val shareBtn = Button(this).apply { text = "Share log"; setOnClickListener { shareLog() } }
         val aaBtn = Button(this).apply {
-            text = "Android Auto (ustawienia)"
+            text = "Android Auto (settings)"
             setOnClickListener {
                 startActivity(Intent(this@SmartGxActivity, com.andrerinas.openheadunit.main.MainActivity::class.java))
             }
@@ -59,8 +59,8 @@ class SmartGxActivity : Activity() {
             addView(scroll, LinearLayout.LayoutParams(-1, 0, 1f))
         }
         setContentView(root)
-        append("SmartGX gotowy. Wlacz BT, Wi-Fi i lokalizacje, zamknij oficjalne mySPIN, potem Start.")
-        append("Log w pliku: ${getExternalFilesDir(null)}/smartgx-log.txt")
+        append("SmartGX ready. Turn on BT, Wi-Fi and location, close the official mySPIN app, then press Start.")
+        append("Log file: ${getExternalFilesDir(null)}/smartgx-log.txt")
     }
 
     override fun onStart() {
@@ -91,7 +91,7 @@ class SmartGxActivity : Activity() {
         super.onRequestPermissionsResult(code, perms, res)
         if (code != 77) return
         val denied = perms.filterIndexed { i, _ -> res[i] != PackageManager.PERMISSION_GRANTED }
-        if (denied.isEmpty()) doStart() else append("Brak uprawnien: $denied")
+        if (denied.isEmpty()) doStart() else append("Missing permissions: $denied")
     }
 
     private fun doStart() {
@@ -101,7 +101,7 @@ class SmartGxActivity : Activity() {
                 startActivity(Intent(Settings.ACTION_REQUEST_IGNORE_BATTERY_OPTIMIZATIONS)
                     .setData(Uri.parse("package:$packageName")))
             }
-        } catch (e: Exception) { append("Bateria: ${e.message}") }
+        } catch (e: Exception) { append("Battery: ${e.message}") }
         ContextCompat.startForegroundService(this, Intent(this, SmartGxService::class.java))
         running = true
         startBtn.text = "Stop"
@@ -117,7 +117,7 @@ class SmartGxActivity : Activity() {
 
     private fun shareLog() {
         val f = File(File(cacheDir, "shared"), "smartgx-log.txt")
-        if (!f.exists() || f.length() == 0L) { append("Brak danych do udostepnienia."); return }
+        if (!f.exists() || f.length() == 0L) { append("No data to share."); return }
         try {
             val uri = FileProvider.getUriForFile(this, "$packageName.fileprovider", f)
             val i = Intent(Intent.ACTION_SEND).apply {
@@ -125,7 +125,7 @@ class SmartGxActivity : Activity() {
                 putExtra(Intent.EXTRA_STREAM, uri)
                 addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION)
             }
-            startActivity(Intent.createChooser(i, "Wyslij log"))
-        } catch (e: Exception) { append("Udostepnianie nie dziala: ${e.message}") }
+            startActivity(Intent.createChooser(i, "Send log"))
+        } catch (e: Exception) { append("Sharing failed: ${e.message}") }
     }
 }

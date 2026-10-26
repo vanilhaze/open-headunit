@@ -17,22 +17,22 @@ import android.view.Surface
 import java.io.ByteArrayOutputStream
 
 /**
- * Most miedzy dekoderem Android Auto a ekranem motocykla.
- * Dekoder wideo renderuje do [surface]; kazda klatka jest zamieniana na JPEG ([targetW]x[targetH])
- * i udostepniana w [latestJpeg]. [onFrame] jest wolane po nowej klatce.
+ * Bridge between the Android Auto decoder and the motorcycle screen.
+ * The video decoder renders into [surface]; each frame is converted to JPEG ([targetW]x[targetH])
+ * and exposed via [latestJpeg]. [onFrame] is called after each new frame.
  */
 object SmartGxBridge {
     @Volatile var enabled = false
     @Volatile var onFrame: (() -> Unit)? = null
     @Volatile var latestJpeg: ByteArray? = null
     @Volatile var frameSeq = 0L
-    /** FPS dekodera AA liczony w oknie ~1 s (klatki faktycznie zdekodowane, przed throttlingiem na wysylke). */
+    /** AA decoder FPS measured over a ~1s window (frames actually decoded, before the send throttle). */
     @Volatile var fps = 0.0
     @Volatile var targetW = 864
     @Volatile var targetH = 320
-    /** true: caly obraz AA z czarnymi pasami; false: przyciecie do wypelnienia. */
+    /** true: full AA image with black bars (letterbox); false: cropped to fill. */
     @Volatile var fitContain = true
-    /** Naklada licznik FPS w rogu obrazu AA (do testow na motocyklu). */
+    /** Overlays an FPS counter in the corner of the AA image (for on-bike testing). */
     @Volatile var showFpsOverlay = true
     @Volatile var readerW = 800
     @Volatile var readerH = 480
@@ -60,7 +60,7 @@ object SmartGxBridge {
         val r = ImageReader.newInstance(readerW, readerH, ImageFormat.YUV_420_888, 3)
         r.setOnImageAvailableListener({ rd -> handle(rd) }, Handler(t.looper))
         reader = r
-        log("MOST: utworzono ImageReader")
+        log("BRIDGE: ImageReader created")
         return r.surface
     }
 
@@ -78,14 +78,14 @@ object SmartGxBridge {
             val now = SystemClock.uptimeMillis()
             if (now - lastMs < MIN_INTERVAL_MS) return
             lastMs = now
-            if (!loggedSize) { loggedSize = true; log("MOST: pierwsza klatka AA ${img.width}x${img.height}") }
+            if (!loggedSize) { loggedSize = true; log("BRIDGE: first AA frame ${img.width}x${img.height}") }
             val jpeg = toJpeg(img) ?: return
             latestJpeg = jpeg
             frameSeq++
             updateFps(now)
             onFrame?.invoke()
         } catch (e: Exception) {
-            log("MOST: blad klatki: ${e.message}")
+            log("BRIDGE: frame error: ${e.message}")
         } finally {
             img.close()
         }
@@ -101,7 +101,7 @@ object SmartGxBridge {
             fpsWindowCount = 0
             if (now - lastFpsLogMs >= 3000) {
                 lastFpsLogMs = now
-                log("MOST: FPS dekodera AA = %.1f".format(fps))
+                log("BRIDGE: AA decoder FPS = %.1f".format(fps))
             }
         }
     }
@@ -126,7 +126,7 @@ object SmartGxBridge {
             val uBase = (y0 / 2 + r) * uP.rowStride + (x0 / 2) * uP.pixelStride
             val vBase = (y0 / 2 + r) * vP.rowStride + (x0 / 2) * vP.pixelStride
             if (interleaved) {
-                // bufor V zawiera V U V U... = uklad NV21; kopiujemy calymi wierszami
+                // V buffer holds V U V U... = NV21 layout; copy whole rows at once
                 val n = minOf(w, vBuf.limit() - vBase)
                 vBuf.position(vBase)
                 vBuf.get(nv21, o, n)

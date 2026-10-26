@@ -6,7 +6,7 @@ import java.text.SimpleDateFormat
 import java.util.Date
 import java.util.Locale
 
-/** Log do pliku: przetrwa minimalizację i zabicie aplikacji. Plik: Android/data/<pakiet>/files/smartgx-log.txt */
+/** File log: survives minimization and the app being killed. File: Android/data/<package>/files/smartgx-log.txt */
 object FileLog {
     private var file: File? = null
     private var shared: File? = null
@@ -25,15 +25,15 @@ object FileLog {
         val prev = Thread.getDefaultUncaughtExceptionHandler()
         Thread.setDefaultUncaughtExceptionHandler { t, e ->
             try {
-                write("CRASH w watku ${t.name}: ${e.javaClass.name}: ${e.message}")
+                write("CRASH in thread ${t.name}: ${e.javaClass.name}: ${e.message}")
                 e.stackTrace.take(12).forEach { write("    at $it") }
-                e.cause?.let { c -> write("  przyczyna: ${c.javaClass.name}: ${c.message}") }
+                e.cause?.let { c -> write("  cause: ${c.javaClass.name}: ${c.message}") }
             } catch (_: Throwable) {}
             prev?.uncaughtException(t, e)
         }
     }
 
-    /** Android 11+: dlaczego poprzedni proces zostal zakonczony (crash, native crash, brak pamieci, zabicie...). */
+    /** Android 11+: why the previous process ended (crash, native crash, out of memory, killed...). */
     private fun logLastExitReasons(ctx: Context) {
         if (android.os.Build.VERSION.SDK_INT < 30) return
         try {
@@ -41,7 +41,7 @@ object FileLog {
             val list = am.getHistoricalProcessExitReasons(ctx.packageName, 0, 3)
             val f = SimpleDateFormat("HH:mm:ss", Locale.US)
             for (i in list) {
-                write("POPRZEDNI PROCES: ${f.format(Date(i.timestamp))} proces=${i.processName} powod=${i.reason} status=${i.status} opis=${i.description}")
+                write("PREVIOUS PROCESS: ${f.format(Date(i.timestamp))} process=${i.processName} reason=${i.reason} status=${i.status} description=${i.description}")
             }
         } catch (e: Exception) { write("exit reasons: ${e.message}") }
     }

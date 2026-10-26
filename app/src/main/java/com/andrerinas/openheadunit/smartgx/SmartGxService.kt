@@ -13,8 +13,8 @@ import android.os.IBinder
 import android.os.PowerManager
 
 /**
- * Trzyma MySpinLink przy życiu niezależnie od Activity.
- * Bez tego po zminimalizowaniu aplikacji Android usypia/zabija proces i ekran TFT gaśnie.
+ * Keeps MySpinLink alive independently of the Activity.
+ * Without this, Android suspends/kills the process after minimizing and the TFT screen goes dark.
  */
 class SmartGxService : Service() {
     private var link: MySpinLink? = null
@@ -26,7 +26,7 @@ class SmartGxService : Service() {
     override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int {
         FileLog.init(this)
         if (intent?.action == ACTION_STOP) {
-            FileLog.write("SERVICE: stop z UI")
+            FileLog.write("SERVICE: stop from UI")
             stopSelf()
             return START_NOT_STICKY
         }
@@ -34,12 +34,12 @@ class SmartGxService : Service() {
         if (link == null) {
             val l = MySpinLink(applicationContext) { msg ->
                 FileLog.write(msg)
-                LogBus.post(msg)          // do wyświetlenia w MainActivity (patrz niżej)
+                LogBus.post(msg)          // for display in SmartGxActivity (see below)
             }
             link = l
             acquireLocks()
             l.start(Regex("SUZUKI|MYSPIN|GSX|Bosch", RegexOption.IGNORE_CASE), 8158)
-            FileLog.write("SERVICE: MySpinLink wystartowany")
+            FileLog.write("SERVICE: MySpinLink started")
         }
         return START_STICKY
     }
@@ -56,10 +56,10 @@ class SmartGxService : Service() {
             android.app.PendingIntent.FLAG_IMMUTABLE
         )
         val n = Notification.Builder(this, "smartgx")
-            .setContentTitle("SmartGX działa")
-            .setContentText("Połączenie z ekranem GX")
+            .setContentTitle("SmartGX running")
+            .setContentText("Connected to GX display")
             .setSmallIcon(android.R.drawable.stat_sys_data_bluetooth)
-            .addAction(Notification.Action.Builder(null, "Zatrzymaj", stop).build())
+            .addAction(Notification.Action.Builder(null, "Stop", stop).build())
             .setOngoing(true)
             .build()
         if (Build.VERSION.SDK_INT >= 29) {
@@ -83,7 +83,7 @@ class SmartGxService : Service() {
     }
 
     override fun onTaskRemoved(rootIntent: Intent?) {
-        FileLog.write("SERVICE: onTaskRemoved (aplikacja zamknięta z listy ostatnich) – usługa działa dalej")
+        FileLog.write("SERVICE: onTaskRemoved (app closed from recents) - service keeps running")
     }
 
     override fun onDestroy() {
@@ -97,7 +97,7 @@ class SmartGxService : Service() {
     companion object { const val ACTION_STOP = "smartgx.STOP" }
 }
 
-/** Prosty most log → UI (MainActivity ustawia listener w onStart i zeruje w onStop). */
+/** Simple log -> UI bridge (SmartGxActivity sets the listener in onStart and clears it in onStop). */
 object LogBus {
     @Volatile var listener: ((String) -> Unit)? = null
     fun post(msg: String) { listener?.invoke(msg) }

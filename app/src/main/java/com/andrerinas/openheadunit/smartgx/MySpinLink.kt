@@ -77,7 +77,7 @@ class MySpinLink(private val ctx: Context, private val log: (String) -> Unit) {
 
         fun writeCS(out: OutputStream, str: String) {
             val bytes = str.toByteArray(Charsets.UTF_8)
-            out.write(1) // Kodowanie 1 = UTF-8 (CS.java)
+            out.write(1) // Encoding 1 = UTF-8 (CS.java)
             writeLE16(out, bytes.size)
             out.write(bytes)
         }
@@ -103,8 +103,8 @@ class MySpinLink(private val ctx: Context, private val log: (String) -> Unit) {
     @Volatile private var savedPin: String? = null
     @Volatile private var targetDeviceName: String? = null
 
-    // Protokół 2.0.x (wg UDP "version":2 i MySpinStateMachineV20x): ServerInit ma inny układ,
-    // dochodzi ServerInitDone (18) i ClientInitDone (17); czas wysyłany dopiero po 17.
+    // Protocol 2.0.x (per UDP "version":2 and MySpinStateMachineV20x): ServerInit has a different layout,
+    // plus ServerInitDone (18) and ClientInitDone (17); the time is only sent after 17.
     @Volatile private var protoMajor = 1
     private var fmtA = 2
     private var fmtB = 2
@@ -160,7 +160,7 @@ class MySpinLink(private val ctx: Context, private val log: (String) -> Unit) {
         multicastLock?.let {
             if (it.isHeld) it.release()
         }
-        log("Zatrzymano")
+        log("Stopped")
     }
 
     private fun closeQuietly(c: Closeable?) {
@@ -168,7 +168,7 @@ class MySpinLink(private val ctx: Context, private val log: (String) -> Unit) {
     }
 
     // =========================================================================
-    // KROK 1: BLUETOOTH RFCOMM (I6.b -> I6.c -> READY -> J6.e dla PIN)
+    // STEP 1: BLUETOOTH RFCOMM (I6.b -> I6.c -> READY -> J6.e for the PIN)
     // =========================================================================
     @SuppressLint("MissingPermission")
     private fun startRfcomm() {
@@ -176,16 +176,16 @@ class MySpinLink(private val ctx: Context, private val log: (String) -> Unit) {
             try {
                 val adapter = ctx.getSystemService(BluetoothManager::class.java)?.adapter
                 if (adapter == null || !adapter.isEnabled) {
-                    log("RFCOMM: Bluetooth wyłączony albo niedostępny")
+                    log("RFCOMM: Bluetooth is off or unavailable")
                     return@thread
                 }
                 val server = adapter.listenUsingRfcommWithServiceRecord("MySpinBluetooth", MYSPIN_UUID)
                 btServer = server
-                log("RFCOMM: Nasłuch na UUID $MYSPIN_UUID")
+                log("RFCOMM: Listening on UUID $MYSPIN_UUID")
                 val socket = server.accept()
                 btSocket = socket
                 closeQuietly(server)
-                log("RFCOMM: Połączono z ${socket.remoteDevice.name} / ${socket.remoteDevice.address}")
+                log("RFCOMM: Connected to ${socket.remoteDevice.name} / ${socket.remoteDevice.address}")
 
                 val output = socket.outputStream
                 val reader = BufferedReader(InputStreamReader(socket.inputStream, Charsets.UTF_8))
@@ -200,7 +200,7 @@ class MySpinLink(private val ctx: Context, private val log: (String) -> Unit) {
                         }
                         sendJson(output, detectJson)
                     } catch (e: Exception) {
-                        log("RFCOMM detect błąd: ${e.message}")
+                        log("RFCOMM detect error: ${e.message}")
                     }
                 }
 
@@ -215,19 +215,19 @@ class MySpinLink(private val ctx: Context, private val log: (String) -> Unit) {
                         val payload = json.optJSONObject("payload")
                         handleIviMessage(output, type, payload)
                     } catch (e: JSONException) {
-                        log("RFCOMM błąd parsowania JSON: ${e.message}")
+                        log("RFCOMM JSON parse error: ${e.message}")
                     }
                 }
-                log("RFCOMM: Rozłączono")
+                log("RFCOMM: Disconnected")
             } catch (e: IOException) {
-                if (running.get()) log("RFCOMM błąd: ${e.message}")
+                if (running.get()) log("RFCOMM error: ${e.message}")
             }
         }
     }
 
     private fun sendJson(output: OutputStream, json: JSONObject) {
         val payloadStr = json.toString() + "\n"
-        log("RFCOMM -> wysyłam: ${json.optString("type")}")
+        log("RFCOMM -> sending: ${json.optString("type")}")
         output.write(payloadStr.toByteArray(Charsets.UTF_8))
         output.flush()
     }
@@ -235,7 +235,7 @@ class MySpinLink(private val ctx: Context, private val log: (String) -> Unit) {
     private fun handleIviMessage(output: OutputStream, type: String, payload: JSONObject?) {
         when (type) {
             "iviDetectResponse" -> {
-                log("RFCOMM: SUKCES DETECT! Wysyłam phoneInitRequest...")
+                log("RFCOMM: DETECT SUCCESS! Sending phoneInitRequest...")
                 val initPayload = JSONObject().apply {
                     put("regionCode", "EU")
                     put("version", 3)
@@ -249,17 +249,17 @@ class MySpinLink(private val ctx: Context, private val log: (String) -> Unit) {
                 sendJson(output, initJson)
             }
             "iviInitResponse" -> {
-                log("RFCOMM: SUKCES INIT! Motocykl autoryzowany: $payload")
+                log("RFCOMM: INIT SUCCESS! Motorcycle authorized: $payload")
                 isIviInitDone = true
                 if (isIviWlanReady && !isPinRequested) {
                     sendPinRequest(output)
                 } else {
-                    log("RFCOMM: Czekam na powiadomienie READY modułu Wi-Fi...")
+                    log("RFCOMM: Waiting for the Wi-Fi module's READY notification...")
                 }
             }
             "iviWlanStateNotification" -> {
                 val state = payload?.optString("iviWlanState") ?: ""
-                log("RFCOMM: Stan Wi-Fi motocykla: $state")
+                log("RFCOMM: Motorcycle Wi-Fi state: $state")
                 if (state == "READY") {
                     isIviWlanReady = true
                     if (isIviInitDone && !isPinRequested) {
@@ -270,21 +270,21 @@ class MySpinLink(private val ctx: Context, private val log: (String) -> Unit) {
             "iviWlanP2PPinConnectionResponse" -> {
                 val pin = payload?.optString("pin")
                 val devName = payload?.optString("deviceName")
-                log("RFCOMM: SUKCES! ODEBRANO KOD PIN: $pin DLA SIECI: $devName")
+                log("RFCOMM: SUCCESS! RECEIVED PIN CODE: $pin FOR NETWORK: $devName")
                 savedPin = pin
                 targetDeviceName = devName
 
                 triggerP2pConnectWithPin()
             }
             "iviErrorNotification" -> {
-                log("RFCOMM: Status błędu: ${payload?.optString("iviError")}")
+                log("RFCOMM: Error status: ${payload?.optString("iviError")}")
             }
         }
     }
 
     private fun sendPinRequest(output: OutputStream) {
         isPinRequested = true
-        log("RFCOMM: Wi-Fi motocykla jest READY! Żądam kodu PIN (phoneWlanP2PPinConnectionRequest)...")
+        log("RFCOMM: Motorcycle Wi-Fi is READY! Requesting PIN code (phoneWlanP2PPinConnectionRequest)...")
         val pinReq = JSONObject().apply {
             put("id", UUID.randomUUID().toString())
             put("type", "phoneWlanP2PPinConnectionRequest")
@@ -294,7 +294,7 @@ class MySpinLink(private val ctx: Context, private val log: (String) -> Unit) {
     }
 
     // =========================================================================
-    // KROK 2: WI-FI DIRECT Z KODEM PIN (ZGODNIE Z C1574j30.java)
+    // STEP 2: WI-FI DIRECT WITH PIN CODE (PER C1574j30.java)
     // =========================================================================
     @SuppressLint("MissingPermission")
     private fun startP2p() {
@@ -319,7 +319,7 @@ class MySpinLink(private val ctx: Context, private val log: (String) -> Unit) {
                     WifiP2pManager.WIFI_P2P_CONNECTION_CHANGED_ACTION ->
                         mgr.requestConnectionInfo(ch) { info ->
                             if (info.groupFormed) {
-                                log("P2P: GRUPA WI-FI POŁĄCZONA! Czekam na pakiet rozgłoszeniowy UDP z portem...")
+                                log("P2P: WI-FI GROUP CONNECTED! Waiting for the UDP broadcast packet with the port...")
                             }
                         }
                 }
@@ -359,13 +359,13 @@ class MySpinLink(private val ctx: Context, private val log: (String) -> Unit) {
                     wps.pin = pin
                 }
 
-                log("P2P: Łączę z ${target.deviceName} używając PIN: $pin...")
+                log("P2P: Connecting to ${target.deviceName} using PIN: $pin...")
                 mgr.connect(ch, cfg, object : WifiP2pManager.ActionListener {
                     override fun onSuccess() {
-                        log("P2P connect: Autoryzacja PIN wysłana do motocykla!")
+                        log("P2P connect: PIN authorization sent to the motorcycle!")
                     }
                     override fun onFailure(r: Int) {
-                        log("P2P connect: Błąd kod=$r")
+                        log("P2P connect: Error code=$r")
                         p2pConnecting.set(false)
                     }
                 })
@@ -376,7 +376,7 @@ class MySpinLink(private val ctx: Context, private val log: (String) -> Unit) {
     }
 
     // =========================================================================
-    // KROK 3: ODBIÓR PRAWDZIWEGO PORTU Z UDP 8158 (ZGODNIE Z c.java I f.java)
+    // STEP 3: RECEIVING THE REAL PORT VIA UDP 8158 (PER c.java AND f.java)
     // =========================================================================
     private fun startUdp(port: Int) {
         thread(name = "udp") {
@@ -387,22 +387,22 @@ class MySpinLink(private val ctx: Context, private val log: (String) -> Unit) {
                     bind(InetSocketAddress(port))
                 }
                 udpSocket = s
-                log("UDP: Nasłuch rozgłoszeń motocykla na porcie $port...")
+                log("UDP: Listening for motorcycle broadcasts on port $port...")
                 val buf = ByteArray(1024)
                 while (running.get()) {
                     val p = DatagramPacket(buf, buf.size)
                     s.receive(p)
                     val rawText = String(p.data, 0, p.length, Charsets.UTF_8)
                     val text = rawText.substringBefore('\u0000').trim()
-                    log("UDP <- Otrzymano pakiet: $text")
+                    log("UDP <- Received packet: $text")
                     try {
                         val j = JSONObject(text)
                         val host = j.optString("hostname").ifEmpty { p.address.hostAddress ?: "192.168.10.2" }
                         val realTcpPort = j.getInt("port")
-                        log("UDP: Wykryto prawdziwy port TCP z motocykla: $host:$realTcpPort")
+                        log("UDP: Detected the real TCP port from the motorcycle: $host:$realTcpPort")
                         connectTcp(host, realTcpPort)
                     } catch (e: Exception) {
-                        log("UDP błąd parsowania JSON: ${e.message}")
+                        log("UDP JSON parse error: ${e.message}")
                     }
                 }
             } catch (_: Exception) {}
@@ -410,7 +410,7 @@ class MySpinLink(private val ctx: Context, private val log: (String) -> Unit) {
     }
 
     // =========================================================================
-    // KROK 4: STRUMIEŃ TCP ZGODNY 1:1 Z C1411gx, C0990bx (Czas w SEKUNDACH!)
+    // STEP 4: TCP STREAM, 1:1 MATCHING C1411gx, C0990bx (TIME IN SECONDS!)
     // =========================================================================
     private fun connectTcp(host: String, port: Int) {
         if (host.isEmpty() || !tcpStarted.compareAndSet(false, true)) return
@@ -427,7 +427,7 @@ class MySpinLink(private val ctx: Context, private val log: (String) -> Unit) {
                     }
                     if (localP2pIp != null) {
                         s.bind(InetSocketAddress(localP2pIp, 0))
-                        log("TCP: Związano gniazdo z lokalnym IP Wi-Fi Direct: ${localP2pIp.hostAddress}")
+                        log("TCP: Bound the socket to the local Wi-Fi Direct IP: ${localP2pIp.hostAddress}")
                     }
                 } catch (_: Exception) {}
 
@@ -435,8 +435,8 @@ class MySpinLink(private val ctx: Context, private val log: (String) -> Unit) {
                 s.tcpNoDelay = true
                 s.connect(InetSocketAddress(host, port), 10_000)
                 tcpSocket = s
-                log("TCP: POŁĄCZONO Z KOKPITEM $host:$port!")
-                log("TCP: Czekam na pakiet powitalny motocykla (Typ 1)...")
+                log("TCP: CONNECTED TO THE CLUSTER $host:$port!")
+                log("TCP: Waiting for the motorcycle's welcome packet (Type 1)...")
 
                 val out = s.getOutputStream()
                 val inp = DataInputStream(s.getInputStream().buffered())
@@ -448,19 +448,19 @@ class MySpinLink(private val ctx: Context, private val log: (String) -> Unit) {
                     val payloadLen = readLE32(headerBuf, 5)
 
                     if (payloadLen < 0 || payloadLen > 5_000_000) {
-                        log("TCP: Błędny rozmiar pakietu ($payloadLen)")
+                        log("TCP: Invalid packet size ($payloadLen)")
                         break
                     }
                     val body = ByteArray(payloadLen)
                     inp.readFully(body)
 
-                    if (packetType != 25) log("TCP <- typ=$packetType len=$payloadLen hdr=${hexOf(headerBuf, 9)} ciało=${hexOf(body, minOf(body.size, 48))}")
+                    if (packetType != 25) log("TCP <- type=$packetType len=$payloadLen hdr=${hexOf(headerBuf, 9)} body=${hexOf(body, minOf(body.size, 48))}")
                     handleTcpPacket(out, packetType, body)
                 }
             } catch (e: IOException) {
-                log("TCP rozłączony: ${e.javaClass.simpleName}: ${e.message} (running=${running.get()}, klatek=$framesSent)")
+                log("TCP disconnected: ${e.javaClass.simpleName}: ${e.message} (running=${running.get()}, frames=$framesSent)")
             } finally {
-                log("TCP: koniec sesji, wysłano $framesSent klatek")
+                log("TCP: session ended, sent $framesSent frames")
                 closeQuietly(tcpSocket)
                 tcpStarted.set(false)
             }
@@ -474,13 +474,13 @@ class MySpinLink(private val ctx: Context, private val log: (String) -> Unit) {
                     val major = (body[0].toInt() and 0xFF) or ((body[1].toInt() and 0xFF) shl 8)
                     val minor = (body[2].toInt() and 0xFF) or ((body[3].toInt() and 0xFF) shl 8)
                     protoMajor = if (major >= 2) 2 else 1
-                    log("TCP <- ProtocolVersion: $major.$minor (używam układu ${if (protoMajor == 2) "2.0.x" else "1.1.x"})")
-                } else log("TCP <- ProtocolVersion (Typ 1), nieznany układ ciała")
+                    log("TCP <- ProtocolVersion: $major.$minor (using the ${if (protoMajor == 2) "2.0.x" else "1.1.x"} layout)")
+                } else log("TCP <- ProtocolVersion (Type 1), unknown body layout")
                 sendServerProtocolAck(out)
-                log("TCP -> Czekam w Stanie 2 na pakiet Capabilities (Typ 11) od motocykla...")
+                log("TCP -> Waiting in State 2 for the Capabilities packet (Type 11) from the motorcycle...")
             }
             11 -> {
-                // Odczyt rozdzielczości ekranu z ciała Pakietu 11 (C1822mE: f=width, g=height)
+                // Read the screen resolution from Packet 11's body (C1822mE: f=width, g=height)
                 if (body.size >= 7) {
                     val nameLen = (body[1].toInt() and 0xFF) or ((body[2].toInt() and 0xFF) shl 8)
                     val offset = 3 + nameLen
@@ -494,12 +494,12 @@ class MySpinLink(private val ctx: Context, private val log: (String) -> Unit) {
                     }
                 }
                 parseClientInitFormat(body)
-                log("TCP <- ClientInit (Typ 11, ekran ${screenWidth}x${screenHeight}px, format=($fmtA,$fmtB,$fmtD))")
+                log("TCP <- ClientInit (Type 11, screen ${screenWidth}x${screenHeight}px, format=($fmtA,$fmtB,$fmtD))")
                 sendServerInitAck(out)
                 if (protoMajor >= 2) {
                     sendServerInitV2(out)
                     sendSimple(out, 18, 1, "ServerInitDone (18)")
-                    log("TCP: czekam na ClientInitDone (17), czas wyślę dopiero po nim")
+                    log("TCP: waiting for ClientInitDone (17), will only send the time after that")
                 } else {
                     sendServerInit(out)
                     sendUtcTime(out)
@@ -507,18 +507,18 @@ class MySpinLink(private val ctx: Context, private val log: (String) -> Unit) {
                 }
             }
             17 -> {
-                log("TCP <- ClientInitDone (Typ 17) ${if (body.isNotEmpty()) body[0].toInt() else -1}")
+                log("TCP <- ClientInitDone (Type 17) ${if (body.isNotEmpty()) body[0].toInt() else -1}")
                 sendUtcTime(out)
                 sendLocalTime(out)
             }
             21 -> {
                 if (body.size >= 3) { fmtA = body[0].toInt() and 0xFF; fmtB = body[1].toInt() and 0xFF; fmtD = body[2].toInt() and 0xFF }
-                log("TCP <- SetPixelFormat (Typ 21) format=($fmtA,$fmtB,$fmtD). Odsyłam Ack (Typ 22)...")
+                log("TCP <- SetPixelFormat (Type 21) format=($fmtA,$fmtB,$fmtD). Sending Ack (Type 22)...")
                 sendPixelFormatAck(out)
             }
             23 -> {
                 if (body.size >= 4) compMode = readLE32(body, 0)
-                log("TCP <- OverrideCompression (Typ 23) tryb=$compMode. Odsyłam Ack (Typ 24)...")
+                log("TCP <- OverrideCompression (Type 23) mode=$compMode. Sending Ack (Type 24)...")
                 sendOverrideCompressionAck(out)
             }
             25 -> {
@@ -526,11 +526,11 @@ class MySpinLink(private val ctx: Context, private val log: (String) -> Unit) {
                 onFrameRequest(out)
             }
             31 -> {
-                // Przycisk WSTECZ motocykla: ekran wysyla parami [1 1 ..] (nacisniecie) i [2 1 ..] (puszczenie).
+                // Motorcycle BACK button: the screen sends pairs [1 1 ..] (press) and [2 1 ..] (release).
                 if (body.size >= 2) {
                     val ev = body[0].toInt() and 0xFF
                     val button = body[1].toInt() and 0xFF
-                    log("PRZYCISK(31): zdarzenie=$ev przycisk=$button")
+                    log("BUTTON(31): event=$ev button=$button")
                     if (ev == 1) onBackButton(out)
                 }
             }
@@ -541,7 +541,7 @@ class MySpinLink(private val ctx: Context, private val log: (String) -> Unit) {
         }
     }
 
-    // ClientInit (2.0 i 1.1): [ES napis][u16 f][u16 g][u16 h][u16 i][u32 j][fmt: u8 a, u8 b, u32 c, u8 d][u32 l]...
+    // ClientInit (2.0 and 1.1): [ES string][u16 f][u16 g][u16 h][u16 i][u32 j][fmt: u8 a, u8 b, u32 c, u8 d][u32 l]...
     private fun parseClientInitFormat(body: ByteArray) {
         try {
             if (body.size < 3) return
@@ -553,9 +553,9 @@ class MySpinLink(private val ctx: Context, private val log: (String) -> Unit) {
                 val mask = readLE32(body, o + 2)
                 fmtD = body[o + 6].toInt() and 0xFF
                 compMode = if (mask and 1 != 0) 1 else if (mask and 2 != 0) 2 else if (mask and 4 != 0) 4 else 1
-                log("ClientInit: maskaKompresji=$mask -> tryb=$compMode")
+                log("ClientInit: compressionMask=$mask -> mode=$compMode")
             }
-        } catch (e: Exception) { log("parseClientInitFormat błąd: ${e.message}") }
+        } catch (e: Exception) { log("parseClientInitFormat error: ${e.message}") }
     }
 
     private fun sendSimple(out: OutputStream, type: Int, value: Int, name: String) {
@@ -583,30 +583,30 @@ class MySpinLink(private val ctx: Context, private val log: (String) -> Unit) {
         log("TCP -> ServerInit 2.0 (Typ 14)")
     }
 
-    // ClientCustomData 2.0.x (67): [u8 e][NW f = akcja][NW g = długość][dane: u8 kod klawisza, opcjonalnie znacznik czasu]
-    // Akcje: 1 press, 2 release, 3 long press, 4 click, 6 abort. Kody: 12 OK, 14 Back, 20/21 pokrętło CW/CCW,
-    // 30 góra, 31 dół, 32 lewo, 33 prawo (z oficjalnego handleFocusControlEvent; działa dla kodów 12..33).
+    // ClientCustomData 2.0.x (67): [u8 e][NW f = action][NW g = length][data: u8 key code, optionally a timestamp]
+    // Actions: 1 press, 2 release, 3 long press, 4 click, 6 abort. Codes: 12 OK, 14 Back, 20/21 knob CW/CCW,
+    // 30 up, 31 down, 32 left, 33 right (from the official handleFocusControlEvent; works for codes 12..33).
     private fun onClientCustomData(out: OutputStream, body: ByteArray) {
         if (body.size < 6) return
         val action = (body[1].toInt() and 0xFF) or ((body[2].toInt() and 0xFF) shl 8)
         val len = (body[3].toInt() and 0xFF) or ((body[4].toInt() and 0xFF) shl 8)
         if (len < 1 || body.size < 5 + len) return
         val key = body[5].toInt() and 0xFF
-        if (key !in 12..33) return // komunikat informacyjny ekranu (Suzuki, ICC, firmware)
-        log("MANETKA: akcja=$action kod=$key")
-        // WSTECZ (14): z dowolnego źródła wracamy do menu (długie przytrzymanie lub krótkie – na razie oba)
+        if (key !in 12..33) return // informational screen message (Suzuki, ICC, firmware)
+        log("JOYSTICK: action=$action code=$key")
+        // BACK (14): from any source, returns to the menu (long or short press - both for now)
         if (key == 14 && mode != Mode.MENU && (action == 3 || (action == 1 && mode != Mode.ANDROID_AUTO))) {
             switchMode(Mode.MENU, out)
             return
         }
-        // Android Auto: joystick w lewo dziala dopiero po puszczeniu; przytrzymanie >= 800 ms = powrot do menu SmartGX
-        // (krotkie klikniecie = DPAD_LEFT w AA). OK dziala normalnie.
+        // Android Auto: joystick left only acts on release; holding >= 800 ms returns to the SmartGX menu
+        // (a short click = DPAD_LEFT in AA). OK works normally.
         if (mode == Mode.ANDROID_AUTO && key == 32) {
             if (action == 3) { leftDownMs = 0; switchMode(Mode.MENU, out); return }
             val now = System.currentTimeMillis()
             if (action == 1) leftDownMs = now
             else if (action == 2) {
-                if (leftDownMs == 0L) return  // puszczenie z poprzedniego ekranu
+                if (leftDownMs == 0L) return  // a release left over from the previous screen
                 val held = now - leftDownMs
                 leftDownMs = 0
                 if (held >= 800) switchMode(Mode.MENU, out) else onSourceKey(32, out)
@@ -629,7 +629,7 @@ class MySpinLink(private val ctx: Context, private val log: (String) -> Unit) {
             out.write(packet)
             out.flush()
         }
-        log("TCP -> Wysłano PacketServerProtocolAcknowledge (Typ 2)")
+        log("TCP -> Sent PacketServerProtocolAcknowledge (Type 2)")
     }
 
     private fun sendServerInitAck(out: OutputStream) {
@@ -642,7 +642,7 @@ class MySpinLink(private val ctx: Context, private val log: (String) -> Unit) {
             out.write(packet)
             out.flush()
         }
-        log("TCP -> Wysłano PacketServerInitAcknowledge (Typ 12)")
+        log("TCP -> Sent PacketServerInitAcknowledge (Type 12)")
     }
 
     private fun sendServerInit(out: OutputStream) {
@@ -665,10 +665,10 @@ class MySpinLink(private val ctx: Context, private val log: (String) -> Unit) {
             out.write(payloadBytes)
             out.flush()
         }
-        log("TCP -> Wysłano PacketServerInit (Typ 14)")
+        log("TCP -> Sent PacketServerInit (Type 14)")
     }
 
-    // Zgodnie z T() w AbstractC0783Yw.java: czas w SEKUNDACH (/ 1000L)
+    // Per T() in AbstractC0783Yw.java: time in SECONDS (/ 1000L)
     private fun sendUtcTime(out: OutputStream) {
         val nowUtcSec = System.currentTimeMillis() / 1000L
         val dataStream = ByteArrayOutputStream()
@@ -692,10 +692,10 @@ class MySpinLink(private val ctx: Context, private val log: (String) -> Unit) {
             out.write(payloadBytes)
             out.flush()
         }
-        log("TCP -> Wysłano czas UTC w sekundach (Pakiet 68)")
+        log("TCP -> Sent UTC time in seconds (Packet 68)")
     }
 
-    // Zgodnie z S() w AbstractC0783Yw.java: czas lokalny w SEKUNDACH (/ 1000L)
+    // Per S() in AbstractC0783Yw.java: local time in SECONDS (/ 1000L)
     private fun sendLocalTime(out: OutputStream) {
         val nowMs = System.currentTimeMillis()
         val nowLocalSec = (nowMs + TimeZone.getDefault().getOffset(nowMs).toLong()) / 1000L
@@ -720,7 +720,7 @@ class MySpinLink(private val ctx: Context, private val log: (String) -> Unit) {
             out.write(payloadBytes)
             out.flush()
         }
-        log("TCP -> Wysłano czas lokalny w sekundach (Pakiet 68)")
+        log("TCP -> Sent local time in seconds (Packet 68)")
     }
 
     private fun sendPixelFormatAck(out: OutputStream) {
@@ -733,7 +733,7 @@ class MySpinLink(private val ctx: Context, private val log: (String) -> Unit) {
             out.write(packet)
             out.flush()
         }
-        log("TCP -> Wysłano PacketPixelFormatAcknowledge (Typ 22)")
+        log("TCP -> Sent PacketPixelFormatAcknowledge (Type 22)")
     }
 
     private fun sendOverrideCompressionAck(out: OutputStream) {
@@ -746,11 +746,11 @@ class MySpinLink(private val ctx: Context, private val log: (String) -> Unit) {
             out.write(packet)
             out.flush()
         }
-        log("TCP -> Wysłano PacketOverrideCompressionAcknowledge (Typ 24)")
+        log("TCP -> Sent PacketOverrideCompressionAcknowledge (Type 24)")
     }
 
     private fun handleHandlebarJoystick(keyCode: Int, out: OutputStream) {
-        log("MANETKA: Naciśnięto przycisk kod=$keyCode")
+        log("JOYSTICK: Button pressed, code=$keyCode")
         when (keyCode) {
             1, 3 -> {
                 selectedMenuIndex = (selectedMenuIndex + 1) % 3
@@ -761,7 +761,7 @@ class MySpinLink(private val ctx: Context, private val log: (String) -> Unit) {
                 requestRedraw(out)
             }
             5 -> {
-                log("MANETKA: Wybrano opcję: $selectedMenuIndex!")
+                log("JOYSTICK: Selected option: $selectedMenuIndex!")
                 switchMode(
                     when (selectedMenuIndex) { 0 -> Mode.ANDROID_AUTO; 1 -> Mode.VIDEO; else -> Mode.STATUS },
                     out
@@ -771,7 +771,7 @@ class MySpinLink(private val ctx: Context, private val log: (String) -> Unit) {
     }
 
     // =========================================================================
-    // TRYBY / ŹRÓDŁA OBRAZU
+    // MODES / VIDEO SOURCES
     // =========================================================================
     enum class Mode { MENU, ANDROID_AUTO, VIDEO, STATUS }
     @Volatile private var mode = Mode.MENU
@@ -780,7 +780,7 @@ class MySpinLink(private val ctx: Context, private val log: (String) -> Unit) {
     private val mainHandler = android.os.Handler(Looper.getMainLooper())
 
     private fun switchMode(newMode: Mode, out: OutputStream) {
-        log("TRYB: $mode -> $newMode")
+        log("MODE: $mode -> $newMode")
         val old = mode
         mode = newMode
         if (old == Mode.ANDROID_AUTO && newMode != Mode.ANDROID_AUTO) stopAndroidAuto()
@@ -788,16 +788,16 @@ class MySpinLink(private val ctx: Context, private val log: (String) -> Unit) {
         requestRedraw(out)
     }
 
-    /** Zdarzenia z manetki poza menu. Tu trafią później AA (D-pad) i odtwarzacz wideo. */
+    /** Joystick events outside the menu. AA (D-pad) and the video player will hook in here later. */
     private fun onSourceKey(key: Int, out: OutputStream) {
         if (mode != Mode.ANDROID_AUTO) {
-            // Ekranowy WSTECZ obsluguje sam motocykl (nie dociera do aplikacji), wiec wracamy joystickiem.
+            // The on-screen BACK button is handled by the motorcycle itself (never reaches the app), so we use the joystick instead.
             if (key == 32 || key == 12) switchMode(Mode.MENU, out)
-            else log("ŹRÓDŁO($mode): klawisz $key (jeszcze nieobsługiwany)")
+            else log("SOURCE($mode): key $key (not yet handled)")
             return
         }
         val android = when (key) {
-            30, 21 -> 19   // DPAD_UP  (joystick gora / pokretlo CCW)
+            30, 21 -> 19   // DPAD_UP  (joystick up / knob CCW)
             31, 20 -> 20   // DPAD_DOWN
             32 -> 21       // DPAD_LEFT
             33 -> 22       // DPAD_RIGHT
@@ -806,22 +806,22 @@ class MySpinLink(private val ctx: Context, private val log: (String) -> Unit) {
             else -> 0
         }
         if (android == 0) return
-        log("AA: klawisz TFT $key -> Android $android")
+        log("AA: TFT key $key -> Android $android")
         try {
             val cm = com.andrerinas.openheadunit.App.provide(ctx).commManager
             cm.sendKey(android, true, null, "smartgx")
             mainHandler.postDelayed({ cm.sendKey(android, false, null, "smartgx") }, 50)
-        } catch (e: Exception) { log("AA: blad wysylania klawisza: ${e.message}") }
+        } catch (e: Exception) { log("AA: error sending key: ${e.message}") }
     }
 
     private var lastBackMs = 0L
     @Volatile private var leftDownMs = 0L
 
-    /** WSTECZ z motocykla: poza menu wraca do menu; w Android Auto: raz = Wstecz w AA, dwa razy szybko = menu. */
+    /** BACK from the motorcycle: outside the menu, returns to the menu; in Android Auto: once = Back in AA, twice quickly = menu. */
     private fun onBackButton(out: OutputStream) {
         val now = System.currentTimeMillis()
         when (mode) {
-            Mode.MENU -> log("WSTECZ w menu glownym (ekran moze sam zamknac widok telefonu)")
+            Mode.MENU -> log("BACK in the main menu (the screen may close the phone view on its own)")
             Mode.ANDROID_AUTO -> {
                 if (now - lastBackMs < 600) {
                     lastBackMs = 0
@@ -836,16 +836,16 @@ class MySpinLink(private val ctx: Context, private val log: (String) -> Unit) {
     }
 
     private fun startAndroidAuto(out: OutputStream) {
-        log("AA: start (tryb samodzielny)")
+        log("AA: start (self mode)")
         SmartGxBridge.log = log
         try {
-            // Wymus poziomy obraz 800x480 (AA domyslnie wybralo pionowe 1080x1920 z rozmiaru telefonu).
+            // Force landscape 800x480 (AA defaulted to portrait 1080x1920 based on the phone's size).
             val st = com.andrerinas.openheadunit.App.provide(ctx).settings
             st.resolutionId = 1
             st.screenOrientation = com.andrerinas.openheadunit.utils.Settings.ScreenOrientation.LANDSCAPE
             SmartGxBridge.readerW = 800; SmartGxBridge.readerH = 480
-            log("AA: ustawiono rozdzielczosc 800x480 i orientacje pozioma")
-        } catch (e: Exception) { log("AA: nie udalo sie ustawic rozdzielczosci: ${e.message}") }
+            log("AA: set resolution to 800x480 and landscape orientation")
+        } catch (e: Exception) { log("AA: failed to set resolution: ${e.message}") }
         SmartGxBridge.targetW = screenWidth
         SmartGxBridge.targetH = screenHeight
         SmartGxBridge.enabled = true
@@ -855,7 +855,7 @@ class MySpinLink(private val ctx: Context, private val log: (String) -> Unit) {
             val i = Intent(ctx, com.andrerinas.openheadunit.aap.AapService::class.java)
                 .setAction(com.andrerinas.openheadunit.aap.AapService.ACTION_START_SELF_MODE)
             ContextCompat.startForegroundService(ctx, i)
-        } catch (e: Exception) { log("AA: nie udalo sie uruchomic: ${e.message}") }
+        } catch (e: Exception) { log("AA: failed to start: ${e.message}") }
     }
 
     private fun stopAndroidAuto() {
@@ -866,7 +866,7 @@ class MySpinLink(private val ctx: Context, private val log: (String) -> Unit) {
             val i = Intent(ctx, com.andrerinas.openheadunit.aap.AapService::class.java)
                 .setAction(com.andrerinas.openheadunit.aap.AapService.ACTION_STOP_SELF_MODE)
             ctx.startService(i)
-        } catch (e: Exception) { log("AA: blad zatrzymania: ${e.message}") }
+        } catch (e: Exception) { log("AA: stop error: ${e.message}") }
         SmartGxBridge.release()
     }
 
@@ -881,7 +881,7 @@ class MySpinLink(private val ctx: Context, private val log: (String) -> Unit) {
             p.color = Color.CYAN; p.textSize = 24f; p.isFakeBoldText = true
             val title = when (mode) {
                 Mode.ANDROID_AUTO -> "ANDROID AUTO"
-                Mode.VIDEO -> "WIDEO"
+                Mode.VIDEO -> "VIDEO"
                 else -> "STATUS GX"
             }
             c.drawText(title, 20f, 35f, p)
@@ -889,35 +889,35 @@ class MySpinLink(private val ctx: Context, private val log: (String) -> Unit) {
             when (mode) {
                 Mode.STATUS -> {
                     val sec = (System.currentTimeMillis() - sessionStartMs) / 1000
-                    c.drawText("Połączono z ekranem: OK", 30f, 110f, p)
-                    c.drawText("Protokół mySPIN: ${protoMajor}.x   Ekran: ${screenWidth}x${screenHeight}", 30f, 150f, p)
-                    c.drawText("Wysłane klatki: $framesSent   Czas sesji: ${sec / 60} min ${sec % 60} s", 30f, 190f, p)
-                    c.drawText("FPS ekranu: %.1f".format(sendFps), 30f, 230f, p)
+                    c.drawText("Connected to screen: OK", 30f, 110f, p)
+                    c.drawText("mySPIN protocol: ${protoMajor}.x   Screen: ${screenWidth}x${screenHeight}", 30f, 150f, p)
+                    c.drawText("Frames sent: $framesSent   Session time: ${sec / 60} min ${sec % 60} s", 30f, 190f, p)
+                    c.drawText("Screen FPS: %.1f".format(sendFps), 30f, 230f, p)
                 }
                 Mode.ANDROID_AUTO -> {
-                    // Ten ekran (renderModeScreen) rysuje sie tylko, dopoki nie ma jeszcze pierwszej klatki z AA.
-                    c.drawText("Łączenie z Android Auto…", 30f, 120f, p)
-                    c.drawText("Telefon musi mieć włączony serwer / tryb samodzielny.", 30f, 160f, p)
+                    // This screen (renderModeScreen) is only drawn until the first AA frame arrives.
+                    c.drawText("Connecting to Android Auto…", 30f, 120f, p)
+                    c.drawText("The phone must have the server / self mode running.", 30f, 160f, p)
                 }
                 else -> {
-                    c.drawText("Wkrótce – źródło jeszcze niepodłączone.", 30f, 120f, p)
+                    c.drawText("Coming soon - source not connected yet.", 30f, 120f, p)
                 }
             }
             p.color = Color.LTGRAY; p.textSize = 18f
             c.drawText(
-                if (mode == Mode.ANDROID_AUTO) "Przytrzymaj joystick w lewo (1 s) – powrót do menu"
-                else "Joystick w lewo lub OK – powrót do menu",
+                if (mode == Mode.ANDROID_AUTO) "Hold the joystick left (1s) to return to the menu"
+                else "Joystick left or OK to return to the menu",
                 30f, (screenHeight - 25).toFloat(), p
             )
             val stream = ByteArrayOutputStream()
             bmp.compress(Bitmap.CompressFormat.JPEG, 75, stream)
             bmp.recycle()
             return stream.toByteArray()
-        } catch (e: Exception) { log("Render ekranu trybu błąd: ${e.message}"); return null }
+        } catch (e: Exception) { log("Mode screen render error: ${e.message}"); return null }
     }
 
     // =========================================================================
-    // GENERATOR PULPITU DLA EKRANU TFT SUZUKI GX (Typ 26)
+    // DASHBOARD GENERATOR FOR THE SUZUKI GX TFT SCREEN (Type 26)
     // =========================================================================
     private val frameLock = Any()
     private val sendExec = java.util.concurrent.Executors.newSingleThreadScheduledExecutor()
@@ -970,11 +970,11 @@ class MySpinLink(private val ctx: Context, private val log: (String) -> Unit) {
                     }
                     if (lastSendMs - lastStatMs > 5000) {
                         lastStatMs = lastSendMs
-                        log("STAT: klatek=$framesSent, FPS_ekran=%.1f, FPS_AA=%.1f, ostatnia=${it.size} B"
+                        log("STAT: frames=$framesSent, FPS_screen=%.1f, FPS_AA=%.1f, last=${it.size} B"
                             .format(sendFps, SmartGxBridge.fps))
                     }
                 }
-            } catch (e: Exception) { log("Wysyłka klatki błąd: ${e.message}") }
+            } catch (e: Exception) { log("Frame send error: ${e.message}") }
         }
     }
 
@@ -998,14 +998,14 @@ class MySpinLink(private val ctx: Context, private val log: (String) -> Unit) {
             p.color = Color.CYAN
             p.textSize = 24f
             p.isFakeBoldText = true
-            canvas.drawText("SUZUKI GSX-S 1000 GX", 20f, 35f, p)
+            canvas.drawText("SUZUKI GSX-S1000 GX", 20f, 35f, p)
 
             val timeStr = SimpleDateFormat("HH:mm", Locale.getDefault()).format(Date())
             cachedMinute = timeStr
             p.color = Color.WHITE
             canvas.drawText(timeStr, (screenWidth - 90).toFloat(), 35f, p)
 
-            val menuTitles = arrayOf("ANDROID AUTO", "WIDEO", "STATUS GX")
+            val menuTitles = arrayOf("ANDROID AUTO", "VIDEO", "STATUS GX")
             val cardW = (screenWidth - 80) / 3f
             val cardH = 130f
             val cardY = 75f
@@ -1034,30 +1034,30 @@ class MySpinLink(private val ctx: Context, private val log: (String) -> Unit) {
                 p.textSize = 16f
                 p.isFakeBoldText = false
                 val desc = when (i) {
-                    0 -> "Nawigacja, muzyka"
-                    1 -> "YouTube (postój)"
-                    else -> "Połączenie, klatki"
+                    0 -> "Navigation, music"
+                    1 -> "YouTube (stationary)"
+                    else -> "Connection, frames"
                 }
                 canvas.drawText(desc, cardX + 25f, cardY + 100f, p)
             }
 
             p.color = Color.GREEN
             p.textSize = 18f
-            canvas.drawText("● POŁĄCZONO PRZEZ SMART-GX BRIDGE | Sterowanie: Lewa manetka", 30f, (cardY + cardH + 40f), p)
+            canvas.drawText("● CONNECTED VIA SMARTGX BRIDGE | Control: handlebar joystick", 30f, (cardY + cardH + 40f), p)
 
             val stream = ByteArrayOutputStream()
             bmp.compress(Bitmap.CompressFormat.JPEG, 75, stream)
             val jpegBytes = stream.toByteArray()
             bmp.recycle()
             return jpegBytes
-        } catch (e: Exception) { log("Render błąd: ${e.message}"); return null }
+        } catch (e: Exception) { log("Render error: ${e.message}"); return null }
     }
 
-    // FramebufferUpdate 2.0.x (VE + C0995c1): [u32 id z żądania][u8 liczba=1]
-    //  prostokąt: [u16 x][u16 y][u16 f][u16 g z ClientInit][u8 fmtA][u8 fmtB][u32 kompresja][u8 fmtD][u8 100][u8 100][u32 dł][dane]
-    // 1.1.x: bez pola id na początku.
+    // FramebufferUpdate 2.0.x (VE + C0995c1): [u32 id from the request][u8 count=1]
+    //  rectangle: [u16 x][u16 y][u16 f][u16 g from ClientInit][u8 fmtA][u8 fmtB][u32 compression][u8 fmtD][u8 100][u8 100][u32 len][data]
+    // 1.1.x: no leading id field.
     private fun sendFramebufferUpdate(out: OutputStream, frameBytes: ByteArray) {
-        if (compMode != 1) log("UWAGA: ekran chce kompresji $compMode, a wysyłam JPEG (1)")
+        if (compMode != 1) log("WARNING: the screen wants compression $compMode, but I'm sending JPEG (1)")
         val body = ByteArrayOutputStream()
         if (protoMajor >= 2) writeLE32(body, requestId)
         body.write(1)
