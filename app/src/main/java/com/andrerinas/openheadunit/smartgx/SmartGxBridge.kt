@@ -112,45 +112,50 @@ object SmartGxBridge {
         val x0 = crop.left and 1.inv(); val y0 = crop.top and 1.inv()
         val w = (crop.width() and 1.inv()).coerceAtLeast(2)
         val h = (crop.height() and 1.inv()).coerceAtLeast(2)
+        val tw = targetW; val th = targetH
+
+        // Compute the final drawn size (post letterbox/crop) up front, so the YUV source can be
+        // resampled straight to that resolution instead of the full decoder frame. Avoids ever
+        // JPEG-encoding/decoding more pixels than will actually end up on screen.
+        val scale = if (fitContain) minOf(tw / w.toFloat(), th / h.toFloat())
+                    else maxOf(tw / w.toFloat(), th / h.toFloat())
+        val dw = ((w * scale).toInt() and 1.inv()).coerceIn(2, tw and 1.inv())
+        val dh = ((h * scale).toInt() and 1.inv()).coerceIn(2, th and 1.inv())
+        val left = (tw - dw) / 2; val top = (th - dh) / 2
+
         val yP = img.planes[0]; val uP = img.planes[1]; val vP = img.planes[2]
-        val nv21 = ByteArray(w * h * 3 / 2)
-        val yBuf = yP.buffer
+        val yBuf = yP.buffer; val uBuf = uP.buffer; val vBuf = vP.buffer
+
+        // Nearest-neighbor resample directly from YUV into a buffer already sized dw x dh (same
+        // color-conversion path as before via YuvImage/BitmapFactory - only the pixel count drops).
+        val nv21 = ByteArray(dw * dh * 3 / 2)
         var o = 0
-        for (r in 0 until h) {
-            val base = (y0 + r) * yP.rowStride + x0 * yP.pixelStride
-            for (c in 0 until w) nv21[o++] = yBuf.get(base + c * yP.pixelStride)
-        }
-        val uBuf = uP.buffer; val vBuf = vP.buffer
-        val interleaved = vP.pixelStride == 2 && uP.pixelStride == 2
-        val row = ByteArray(w)
-        for (r in 0 until h / 2) {
-            val uBase = (y0 / 2 + r) * uP.rowStride + (x0 / 2) * uP.pixelStride
-            val vBase = (y0 / 2 + r) * vP.rowStride + (x0 / 2) * vP.pixelStride
-            if (interleaved) {
-                // V buffer holds V U V U... = NV21 layout; copy whole rows at once
-                val n = minOf(w, vBuf.limit() - vBase)
-                vBuf.position(vBase)
-                vBuf.get(nv21, o, n)
-                o += w
-            } else {
-                for (c in 0 until w / 2) {
-                    nv21[o++] = vBuf.get(vBase + c * vP.pixelStride)
-                    nv21[o++] = uBuf.get(uBase + c * uP.pixelStride)
-                }
+        for (r in 0 until dh) {
+            val sy = (r * h / dh).coerceAtMost(h - 1)
+            val base = (y0 + sy) * yP.rowStride
+            for (c in 0 until dw) {
+                val sx = (c * w / dw).coerceAtMost(w - 1)
+                nv21[o++] = yBuf.get(base + (x0 + sx) * yP.pixelStride)
             }
         }
-        val full = ByteArrayOutputStream()
-        YuvImage(nv21, ImageFormat.NV21, w, h, null).compressToJpeg(Rect(0, 0, w, h), 85, full)
-        val src = BitmapFactory.decodeByteArray(full.toByteArray(), 0, full.size()) ?: return null
-        val tw = targetW; val th = targetH
+        for (r in 0 until dh / 2) {
+            val sy = (r * h / dh).coerceAtMost(h / 2 - 1)
+            val uRowBase = (y0 / 2 + sy) * uP.rowStride
+            val vRowBase = (y0 / 2 + sy) * vP.rowStride
+            for (c in 0 until dw / 2) {
+                val sx = (c * w / dw).coerceAtMost(w / 2 - 1)
+                nv21[o++] = vBuf.get(vRowBase + (x0 / 2 + sx) * vP.pixelStride)
+                nv21[o++] = uBuf.get(uRowBase + (x0 / 2 + sx) * uP.pixelStride)
+            }
+        }
+
+        val small = ByteArrayOutputStream()
+        YuvImage(nv21, ImageFormat.NV21, dw, dh, null).compressToJpeg(Rect(0, 0, dw, dh), 85, small)
+        val src = BitmapFactory.decodeByteArray(small.toByteArray(), 0, small.size()) ?: return null
         val dst = Bitmap.createBitmap(tw, th, Bitmap.Config.RGB_565)
         val c = Canvas(dst)
         c.drawColor(Color.BLACK)
-        val scale = if (fitContain) minOf(tw / w.toFloat(), th / h.toFloat())
-                    else maxOf(tw / w.toFloat(), th / h.toFloat())
-        val dw = (w * scale).toInt(); val dh = (h * scale).toInt()
-        val left = (tw - dw) / 2; val top = (th - dh) / 2
-        c.drawBitmap(src, null, Rect(left, top, left + dw, top + dh), paint)
+        c.drawBitmap(src, left.toFloat(), top.toFloat(), paint)
         src.recycle()
         if (showFpsOverlay) {
             val text = "%.1f FPS".format(fps)
