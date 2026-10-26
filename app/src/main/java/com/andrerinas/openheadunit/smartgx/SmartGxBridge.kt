@@ -38,7 +38,8 @@ object SmartGxBridge {
     @Volatile var readerH = 480
     @Volatile var log: (String) -> Unit = {}
 
-    private const val MIN_INTERVAL_MS = 70L
+    /** Caps the decoder at ~25 FPS (was 70ms / ~14 FPS). Lower further only if the phone keeps up - watch the FPS overlay. */
+    private const val MIN_INTERVAL_MS = 40L
     private var reader: ImageReader? = null
     private var thread: HandlerThread? = null
     private var lastMs = 0L
