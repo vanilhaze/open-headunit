@@ -42,6 +42,18 @@ object FileLog {
             val f = SimpleDateFormat("HH:mm:ss", Locale.US)
             for (i in list) {
                 write("PREVIOUS PROCESS: ${f.format(Date(i.timestamp))} process=${i.processName} reason=${i.reason} status=${i.status} description=${i.description}")
+                // reason 4 = CRASH (Java), 5 = CRASH_NATIVE (C/C++): try to pull a trace with where it happened.
+                if (i.reason == 4 || i.reason == 5) {
+                    try {
+                        i.traceInputStream?.use { ins ->
+                            val text = ins.bufferedReader(Charsets.UTF_8).readText()
+                            if (text.isNotBlank()) {
+                                write("  NATIVE TRACE (${text.length} chars, first 60 lines):")
+                                text.lineSequence().take(60).forEach { write("    $it") }
+                            }
+                        } ?: write("  no trace available for this exit")
+                    } catch (e: Exception) { write("  trace read error: ${e.message}") }
+                }
             }
         } catch (e: Exception) { write("exit reasons: ${e.message}") }
     }
