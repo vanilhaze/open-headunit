@@ -268,6 +268,29 @@ object AppLog {
 
     private fun log(priority: Int, msg: String) {
         LOGGER.println(priority, TAG, msg)
+        forwardToSmartGxLog(priority, msg)
+    }
+
+    /**
+     * Mirrors warnings/errors into the SmartGX debug screen (SmartGxActivity), which has its own
+     * log view (FileLog/LogBus) that AppLog normally never reaches. Self-mode Android Auto launch
+     * progress (SelfLauncherManager and its launchers) logs exclusively through AppLog, so without
+     * this a failed/stuck self-mode launch is invisible anywhere except adb logcat. INFO/DEBUG/
+     * VERBOSE are deliberately not forwarded - those can be several lines per frame during a real
+     * driving session, which would flood the debug screen for no benefit.
+     * [LogBus.post] is a null check when no one is listening (SmartGxActivity not open), so this is
+     * effectively free the rest of the time.
+     */
+    private fun forwardToSmartGxLog(priority: Int, msg: String) {
+        val level = when (priority) {
+            Log.WARN -> "W"
+            Log.ERROR -> "E"
+            else -> return
+        }
+        try {
+            com.andrerinas.openheadunit.smartgx.LogBus.post("APPLOG[$level]: $msg")
+        } catch (_: Throwable) {
+        }
     }
 
     private fun isLoggable(priority: Int): Boolean = priority >= LOG_LEVEL
@@ -282,7 +305,9 @@ object AppLog {
      */
     private fun loge(message: String, tr: Throwable?) {
         val trace = if (tr != null) Log.getStackTraceString(tr) else ""
-        LOGGER.println(Log.ERROR, TAG, if (trace.isEmpty()) message else "$message\n$trace")
+        val full = if (trace.isEmpty()) message else "$message\n$trace"
+        LOGGER.println(Log.ERROR, TAG, full)
+        forwardToSmartGxLog(Log.ERROR, message) // trace omitted from the debug screen, keep it short
     }
 
     private fun closeAppLogFileLogger() {
