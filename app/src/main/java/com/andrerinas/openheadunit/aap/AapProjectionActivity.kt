@@ -2139,7 +2139,12 @@ class AapProjectionActivity : SurfaceActivity(), IProjectionView.Callbacks, Vide
 
 
     override fun onVideoDimensionsChanged(width: Int, height: Int) {
-        AppLog.i("[AapProjectionActivity] Received video dimensions: ${width}x$height")
+        // WARN (not INFO) so this reaches the on-device SmartGX debug log without logcat: the
+        // aspect-ratio complaint needs to know whether AA actually negotiated something other
+        // than the 800x480 SmartGxBridge.readerW/readerH assumes.
+        val bridgeReader = "${com.andrerinas.openheadunit.smartgx.SmartGxBridge.readerW}x${com.andrerinas.openheadunit.smartgx.SmartGxBridge.readerH}"
+        AppLog.w("[AapProjectionActivity] AA negotiated video dimensions: ${width}x$height " +
+                "(SmartGxBridge.readerW/H assumes $bridgeReader - mismatch here means wrong aspect on the TFT)")
         runOnUiThread {
             projectionView.setVideoSize(width, height)
             ProjectionViewScaler.updateScale(projectionView as View, width, height)
