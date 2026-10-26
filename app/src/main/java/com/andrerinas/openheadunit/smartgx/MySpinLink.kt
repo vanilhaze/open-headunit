@@ -143,6 +143,9 @@ class MySpinLink(private val ctx: Context, private val log: (String) -> Unit) {
     fun stop() {
         if (!running.compareAndSet(true, false)) return
         if (mode == Mode.ANDROID_AUTO) { mode = Mode.MENU; stopAndroidAuto() }
+        // Only tear down the GL/EGL capture pipeline here, on a full MySpinLink shutdown - not on
+        // every MENU<->ANDROID_AUTO toggle (see stopAndroidAuto()).
+        SmartGxBridge.release()
         closeQuietly(btServer); closeQuietly(btSocket)
         udpSocket?.close(); closeQuietly(tcpSocket)
         p2pReceiver?.let {
@@ -867,7 +870,18 @@ class MySpinLink(private val ctx: Context, private val log: (String) -> Unit) {
                 .setAction(com.andrerinas.openheadunit.aap.AapService.ACTION_STOP_SELF_MODE)
             ctx.startService(i)
         } catch (e: Exception) { log("AA: stop error: ${e.message}") }
-        SmartGxBridge.release()
+        // Deliberately NOT calling SmartGxBridge.release() here. AapProjectionActivity's
+        // onSurfaceChanged() - the only place that re-queries SmartGxBridge.surface() and tells
+        // the video decoder which Surface to render to - fires once per real SurfaceView
+        // creation, not once per self-mode stop/start cycle. If we destroy the GL/EGL surface on
+        // every stop (as this used to), a quick stop+restart leaves the decoder still pointing at
+        // a surface we already released: it renders to a dead target, SmartGxBridge never
+        // produces another frame, and the motorcycle screen is stuck on the static "Connecting to
+        // Android Auto..." placeholder forever even though the TCP/mySPIN link is perfectly
+        // healthy (confirmed in the field: a restarted self-mode session sent ~1000 *identical*
+        // JPEGs - the fallback screen - over a full minute, with zero further BRIDGE: log lines).
+        // The capture pipeline is cheap to leave idle, so it's torn down only in stop() (full
+        // MySpinLink shutdown), not here.
     }
 
     private fun renderModeScreen(): ByteArray? {
