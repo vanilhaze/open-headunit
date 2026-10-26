@@ -8,8 +8,10 @@ import android.graphics.ImageFormat
 import android.graphics.Paint
 import android.graphics.Rect
 import android.graphics.YuvImage
+import android.hardware.HardwareBuffer
 import android.media.Image
 import android.media.ImageReader
+import android.os.Build
 import android.os.Handler
 import android.os.HandlerThread
 import android.os.SystemClock
@@ -58,10 +60,21 @@ object SmartGxBridge {
         reader?.let { return it.surface }
         val t = HandlerThread("smartgx-frames").also { it.start() }
         thread = t
-        val r = ImageReader.newInstance(readerW, readerH, ImageFormat.YUV_420_888, 3)
+        // Force a CPU-readable buffer. Without this, some devices (seen on OnePlus 15 / OP60FFL1)
+        // hand the decoder's output surface an opaque/tiled private format (e.g. Qualcomm UBWC)
+        // even though YUV_420_888 was requested; calling img.planes[] on that then crashes natively
+        // with "JNI DETECTED ERROR ... non-zero capacity for nullptr pointer ... NewDirectByteBuffer".
+        val r = if (Build.VERSION.SDK_INT >= 29) {
+            ImageReader.newInstance(
+                readerW, readerH, ImageFormat.YUV_420_888, 3,
+                HardwareBuffer.USAGE_CPU_READ_OFTEN
+            )
+        } else {
+            ImageReader.newInstance(readerW, readerH, ImageFormat.YUV_420_888, 3)
+        }
         r.setOnImageAvailableListener({ rd -> handle(rd) }, Handler(t.looper))
         reader = r
-        log("BRIDGE: ImageReader created")
+        log("BRIDGE: ImageReader created (CPU_READ_OFTEN=${Build.VERSION.SDK_INT >= 29})")
         return r.surface
     }
 
