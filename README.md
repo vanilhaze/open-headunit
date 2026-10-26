@@ -12,13 +12,13 @@
 Open Headunit is an Android app that allows you to turn your Android tablet or phone into an Android Auto receiver. This project is a revived version of the original headunit project by the great Michael Reid. The original project can be found here:
 https://github.com/mikereidis/headunit
 
-## Fork: SmartGT (2026)
+## Fork: SmartGX (2026)
 
 This fork, maintained by [vanilhaze](https://github.com/vanilhaze), adds a bridge
 between Android Auto and the mySPIN protocol used by Suzuki motorcycle TFT
 displays (e.g. GSX-S1000GX), letting Android Auto render directly on the bike's
 instrument cluster alongside a joystick-controlled menu. See the
-[`smartgt`](app/src/main/java/com/andrerinas/openheadunit/smartgt) package for
+[`smartgx`](app/src/main/java/com/andrerinas/openheadunit/smartgx) package for
 the added code. Upstream project and license unchanged (AGPL-3.0, see LICENSE).
 
 ## NOTE!

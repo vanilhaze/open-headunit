@@ -1,4 +1,4 @@
-package com.andrerinas.openheadunit.smartgt
+package com.andrerinas.openheadunit.smartgx
 
 import android.graphics.Bitmap
 import android.graphics.BitmapFactory
@@ -21,7 +21,7 @@ import java.io.ByteArrayOutputStream
  * Dekoder wideo renderuje do [surface]; kazda klatka jest zamieniana na JPEG ([targetW]x[targetH])
  * i udostepniana w [latestJpeg]. [onFrame] jest wolane po nowej klatce.
  */
-object SmartGtBridge {
+object SmartGxBridge {
     @Volatile var enabled = false
     @Volatile var onFrame: (() -> Unit)? = null
     @Volatile var latestJpeg: ByteArray? = null
@@ -55,7 +55,7 @@ object SmartGtBridge {
     @Synchronized
     fun surface(): Surface {
         reader?.let { return it.surface }
-        val t = HandlerThread("smartgt-frames").also { it.start() }
+        val t = HandlerThread("smartgx-frames").also { it.start() }
         thread = t
         val r = ImageReader.newInstance(readerW, readerH, ImageFormat.YUV_420_888, 3)
         r.setOnImageAvailableListener({ rd -> handle(rd) }, Handler(t.looper))

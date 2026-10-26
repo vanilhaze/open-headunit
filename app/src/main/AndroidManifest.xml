@@ -119,9 +119,9 @@
         tools:ignore="GoogleAppIndexingWarning">
 
         <activity
-            android:name=".smartgt.SmartGtActivity"
+            android:name=".smartgx.SmartGxActivity"
             android:exported="true"
-            android:label="SmartGT"
+            android:label="SmartGX"
             android:theme="@android:style/Theme.DeviceDefault.NoActionBar">
             <intent-filter>
                 <action android:name="android.intent.action.MAIN" />
@@ -130,7 +130,7 @@
         </activity>
 
         <service
-            android:name=".smartgt.SmartGtService"
+            android:name=".smartgx.SmartGxService"
             android:exported="false"
             android:foregroundServiceType="connectedDevice" />
 

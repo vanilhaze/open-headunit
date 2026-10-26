@@ -1,4 +1,4 @@
-package com.andrerinas.openheadunit.smartgt
+package com.andrerinas.openheadunit.smartgx
 
 import android.Manifest
 import android.app.Activity
@@ -23,8 +23,8 @@ import java.text.SimpleDateFormat
 import java.util.Date
 import java.util.Locale
 
-/** Ekran sterujacy SmartGT: Start/Stop uslugi, podglad logu, udostepnianie logu. */
-class SmartGtActivity : Activity() {
+/** Ekran sterujacy SmartGX: Start/Stop uslugi, podglad logu, udostepnianie logu. */
+class SmartGxActivity : Activity() {
 
     private lateinit var logView: TextView
     private lateinit var scroll: ScrollView
@@ -42,7 +42,7 @@ class SmartGtActivity : Activity() {
         val aaBtn = Button(this).apply {
             text = "Android Auto (ustawienia)"
             setOnClickListener {
-                startActivity(Intent(this@SmartGtActivity, com.andrerinas.openheadunit.main.MainActivity::class.java))
+                startActivity(Intent(this@SmartGxActivity, com.andrerinas.openheadunit.main.MainActivity::class.java))
             }
         }
         logView = TextView(this).apply { typeface = Typeface.MONOSPACE; textSize = 11f; setTextIsSelectable(true) }
@@ -59,8 +59,8 @@ class SmartGtActivity : Activity() {
             addView(scroll, LinearLayout.LayoutParams(-1, 0, 1f))
         }
         setContentView(root)
-        append("SmartGT gotowy. Wlacz BT, Wi-Fi i lokalizacje, zamknij oficjalne mySPIN, potem Start.")
-        append("Log w pliku: ${getExternalFilesDir(null)}/smartgt-log.txt")
+        append("SmartGX gotowy. Wlacz BT, Wi-Fi i lokalizacje, zamknij oficjalne mySPIN, potem Start.")
+        append("Log w pliku: ${getExternalFilesDir(null)}/smartgx-log.txt")
     }
 
     override fun onStart() {
@@ -75,7 +75,7 @@ class SmartGtActivity : Activity() {
 
     private fun toggle() {
         if (running) {
-            startService(Intent(this, SmartGtService::class.java).setAction(SmartGtService.ACTION_STOP))
+            startService(Intent(this, SmartGxService::class.java).setAction(SmartGxService.ACTION_STOP))
             running = false; startBtn.text = "Start"
             return
         }
@@ -102,7 +102,7 @@ class SmartGtActivity : Activity() {
                     .setData(Uri.parse("package:$packageName")))
             }
         } catch (e: Exception) { append("Bateria: ${e.message}") }
-        ContextCompat.startForegroundService(this, Intent(this, SmartGtService::class.java))
+        ContextCompat.startForegroundService(this, Intent(this, SmartGxService::class.java))
         running = true
         startBtn.text = "Stop"
     }
@@ -116,7 +116,7 @@ class SmartGtActivity : Activity() {
     }
 
     private fun shareLog() {
-        val f = File(File(cacheDir, "shared"), "smartgt-log.txt")
+        val f = File(File(cacheDir, "shared"), "smartgx-log.txt")
         if (!f.exists() || f.length() == 0L) { append("Brak danych do udostepnienia."); return }
         try {
             val uri = FileProvider.getUriForFile(this, "$packageName.fileprovider", f)

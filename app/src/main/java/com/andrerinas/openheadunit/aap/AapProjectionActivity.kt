@@ -2012,9 +2012,9 @@ class AapProjectionActivity : SurfaceActivity(), IProjectionView.Callbacks, Vide
 
     override fun onSurfaceChanged(surface: android.view.Surface, width: Int, height: Int) {
         AppLog.i("[UI_DEBUG] [AapProjectionActivity] onSurfaceChanged. Actual surface dimensions: width=$width, height=$height")
-        // SmartGT: gdy wlaczony most, dekoder renderuje do ImageReadera (klatki ida na ekran motocykla)
-        val target = if (com.andrerinas.openheadunit.smartgt.SmartGtBridge.enabled)
-            com.andrerinas.openheadunit.smartgt.SmartGtBridge.surface() else surface
+        // SmartGX: gdy wlaczony most, dekoder renderuje do ImageReadera (klatki ida na ekran motocykla)
+        val target = if (com.andrerinas.openheadunit.smartgx.SmartGxBridge.enabled)
+            com.andrerinas.openheadunit.smartgx.SmartGxBridge.surface() else surface
         val surfaceChanged = relaunchRecovery.onSurfaceChanged(
             ownedSurface !== target || !videoDecoder.isCurrentSurface(target),
             videoDecoder.surfaceStopGeneration,

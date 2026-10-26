@@ -1,4 +1,4 @@
-package com.andrerinas.openheadunit.smartgt
+package com.andrerinas.openheadunit.smartgx
 
 import android.annotation.SuppressLint
 import android.bluetooth.BluetoothManager
@@ -599,7 +599,7 @@ class MySpinLink(private val ctx: Context, private val log: (String) -> Unit) {
             switchMode(Mode.MENU, out)
             return
         }
-        // Android Auto: joystick w lewo dziala dopiero po puszczeniu; przytrzymanie >= 800 ms = powrot do menu SmartGT
+        // Android Auto: joystick w lewo dziala dopiero po puszczeniu; przytrzymanie >= 800 ms = powrot do menu SmartGX
         // (krotkie klikniecie = DPAD_LEFT w AA). OK dziala normalnie.
         if (mode == Mode.ANDROID_AUTO && key == 32) {
             if (action == 3) { leftDownMs = 0; switchMode(Mode.MENU, out); return }
@@ -809,8 +809,8 @@ class MySpinLink(private val ctx: Context, private val log: (String) -> Unit) {
         log("AA: klawisz TFT $key -> Android $android")
         try {
             val cm = com.andrerinas.openheadunit.App.provide(ctx).commManager
-            cm.sendKey(android, true, null, "smartgt")
-            mainHandler.postDelayed({ cm.sendKey(android, false, null, "smartgt") }, 50)
+            cm.sendKey(android, true, null, "smartgx")
+            mainHandler.postDelayed({ cm.sendKey(android, false, null, "smartgx") }, 50)
         } catch (e: Exception) { log("AA: blad wysylania klawisza: ${e.message}") }
     }
 
@@ -837,20 +837,20 @@ class MySpinLink(private val ctx: Context, private val log: (String) -> Unit) {
 
     private fun startAndroidAuto(out: OutputStream) {
         log("AA: start (tryb samodzielny)")
-        SmartGtBridge.log = log
+        SmartGxBridge.log = log
         try {
             // Wymus poziomy obraz 800x480 (AA domyslnie wybralo pionowe 1080x1920 z rozmiaru telefonu).
             val st = com.andrerinas.openheadunit.App.provide(ctx).settings
             st.resolutionId = 1
             st.screenOrientation = com.andrerinas.openheadunit.utils.Settings.ScreenOrientation.LANDSCAPE
-            SmartGtBridge.readerW = 800; SmartGtBridge.readerH = 480
+            SmartGxBridge.readerW = 800; SmartGxBridge.readerH = 480
             log("AA: ustawiono rozdzielczosc 800x480 i orientacje pozioma")
         } catch (e: Exception) { log("AA: nie udalo sie ustawic rozdzielczosci: ${e.message}") }
-        SmartGtBridge.targetW = screenWidth
-        SmartGtBridge.targetH = screenHeight
-        SmartGtBridge.enabled = true
-        SmartGtBridge.latestJpeg = null
-        SmartGtBridge.onFrame = { requestRedraw(out) }
+        SmartGxBridge.targetW = screenWidth
+        SmartGxBridge.targetH = screenHeight
+        SmartGxBridge.enabled = true
+        SmartGxBridge.latestJpeg = null
+        SmartGxBridge.onFrame = { requestRedraw(out) }
         try {
             val i = Intent(ctx, com.andrerinas.openheadunit.aap.AapService::class.java)
                 .setAction(com.andrerinas.openheadunit.aap.AapService.ACTION_START_SELF_MODE)
@@ -860,14 +860,14 @@ class MySpinLink(private val ctx: Context, private val log: (String) -> Unit) {
 
     private fun stopAndroidAuto() {
         log("AA: stop")
-        SmartGtBridge.enabled = false
-        SmartGtBridge.onFrame = null
+        SmartGxBridge.enabled = false
+        SmartGxBridge.onFrame = null
         try {
             val i = Intent(ctx, com.andrerinas.openheadunit.aap.AapService::class.java)
                 .setAction(com.andrerinas.openheadunit.aap.AapService.ACTION_STOP_SELF_MODE)
             ctx.startService(i)
         } catch (e: Exception) { log("AA: blad zatrzymania: ${e.message}") }
-        SmartGtBridge.release()
+        SmartGxBridge.release()
     }
 
     private fun renderModeScreen(): ByteArray? {
@@ -937,7 +937,7 @@ class MySpinLink(private val ctx: Context, private val log: (String) -> Unit) {
         val minuteNow = SimpleDateFormat("HH:mm", Locale.getDefault()).format(Date())
         if (minuteNow != cachedMinute) dirty = true
         if (mode == Mode.STATUS && System.currentTimeMillis() - lastSendMs >= 1000) dirty = true
-        if (mode == Mode.ANDROID_AUTO && SmartGtBridge.frameSeq != lastAaSeq) dirty = true
+        if (mode == Mode.ANDROID_AUTO && SmartGxBridge.frameSeq != lastAaSeq) dirty = true
         val wait = if (dirty) 0L else maxOf(0L, 500L - (System.currentTimeMillis() - lastSendMs))
         sendExec.schedule({ flushFrame(out) }, wait, java.util.concurrent.TimeUnit.MILLISECONDS)
     }
@@ -971,7 +971,7 @@ class MySpinLink(private val ctx: Context, private val log: (String) -> Unit) {
                     if (lastSendMs - lastStatMs > 5000) {
                         lastStatMs = lastSendMs
                         log("STAT: klatek=$framesSent, FPS_ekran=%.1f, FPS_AA=%.1f, ostatnia=${it.size} B"
-                            .format(sendFps, SmartGtBridge.fps))
+                            .format(sendFps, SmartGxBridge.fps))
                     }
                 }
             } catch (e: Exception) { log("Wysyłka klatki błąd: ${e.message}") }
@@ -980,8 +980,8 @@ class MySpinLink(private val ctx: Context, private val log: (String) -> Unit) {
 
     private fun renderDashboardJpeg(): ByteArray? {
         if (mode == Mode.ANDROID_AUTO) {
-            val f = SmartGtBridge.latestJpeg
-            lastAaSeq = SmartGtBridge.frameSeq
+            val f = SmartGxBridge.latestJpeg
+            lastAaSeq = SmartGxBridge.frameSeq
             return f ?: renderModeScreen()
         }
         if (mode != Mode.MENU) return renderModeScreen()

@@ -1,4 +1,4 @@
-package com.andrerinas.openheadunit.smartgt
+package com.andrerinas.openheadunit.smartgx
 
 import android.app.Notification
 import android.app.NotificationChannel
@@ -16,7 +16,7 @@ import android.os.PowerManager
  * Trzyma MySpinLink przy życiu niezależnie od Activity.
  * Bez tego po zminimalizowaniu aplikacji Android usypia/zabija proces i ekran TFT gaśnie.
  */
-class SmartGtService : Service() {
+class SmartGxService : Service() {
     private var link: MySpinLink? = null
     private var wakeLock: PowerManager.WakeLock? = null
     private var wifiLock: WifiManager.WifiLock? = null
@@ -48,15 +48,15 @@ class SmartGtService : Service() {
         val nm = getSystemService(NotificationManager::class.java)
         if (Build.VERSION.SDK_INT >= 26) {
             nm.createNotificationChannel(
-                NotificationChannel("smartgt", "SmartGT", NotificationManager.IMPORTANCE_LOW)
+                NotificationChannel("smartgx", "SmartGX", NotificationManager.IMPORTANCE_LOW)
             )
         }
         val stop = android.app.PendingIntent.getService(
-            this, 0, Intent(this, SmartGtService::class.java).setAction(ACTION_STOP),
+            this, 0, Intent(this, SmartGxService::class.java).setAction(ACTION_STOP),
             android.app.PendingIntent.FLAG_IMMUTABLE
         )
-        val n = Notification.Builder(this, "smartgt")
-            .setContentTitle("SmartGT działa")
+        val n = Notification.Builder(this, "smartgx")
+            .setContentTitle("SmartGX działa")
             .setContentText("Połączenie z ekranem GX")
             .setSmallIcon(android.R.drawable.stat_sys_data_bluetooth)
             .addAction(Notification.Action.Builder(null, "Zatrzymaj", stop).build())
@@ -72,13 +72,13 @@ class SmartGtService : Service() {
 
     private fun acquireLocks() {
         val pm = getSystemService(Context.POWER_SERVICE) as PowerManager
-        wakeLock = pm.newWakeLock(PowerManager.PARTIAL_WAKE_LOCK, "SmartGT:link").apply {
+        wakeLock = pm.newWakeLock(PowerManager.PARTIAL_WAKE_LOCK, "SmartGX:link").apply {
             setReferenceCounted(false); acquire()
         }
         val wm = applicationContext.getSystemService(Context.WIFI_SERVICE) as WifiManager
         wifiLock = wm.createWifiLock(
             if (Build.VERSION.SDK_INT >= 29) WifiManager.WIFI_MODE_FULL_LOW_LATENCY
-            else WifiManager.WIFI_MODE_FULL_HIGH_PERF, "SmartGT:wifi"
+            else WifiManager.WIFI_MODE_FULL_HIGH_PERF, "SmartGX:wifi"
         ).apply { setReferenceCounted(false); acquire() }
     }
 
@@ -94,7 +94,7 @@ class SmartGtService : Service() {
         super.onDestroy()
     }
 
-    companion object { const val ACTION_STOP = "smartgt.STOP" }
+    companion object { const val ACTION_STOP = "smartgx.STOP" }
 }
 
 /** Prosty most log → UI (MainActivity ustawia listener w onStart i zeruje w onStop). */

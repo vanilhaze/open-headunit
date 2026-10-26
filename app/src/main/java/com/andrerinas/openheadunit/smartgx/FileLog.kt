@@ -1,4 +1,4 @@
-package com.andrerinas.openheadunit.smartgt
+package com.andrerinas.openheadunit.smartgx
 
 import android.content.Context
 import java.io.File
@@ -6,7 +6,7 @@ import java.text.SimpleDateFormat
 import java.util.Date
 import java.util.Locale
 
-/** Log do pliku: przetrwa minimalizację i zabicie aplikacji. Plik: Android/data/<pakiet>/files/smartgt-log.txt */
+/** Log do pliku: przetrwa minimalizację i zabicie aplikacji. Plik: Android/data/<pakiet>/files/smartgx-log.txt */
 object FileLog {
     private var file: File? = null
     private var shared: File? = null
@@ -16,10 +16,10 @@ object FileLog {
     fun init(ctx: Context) {
         if (file != null) return
         val dir = ctx.getExternalFilesDir(null) ?: ctx.filesDir
-        file = File(dir, "smartgt-log.txt").also {
+        file = File(dir, "smartgx-log.txt").also {
             if (it.length() > 2_000_000) it.delete()
         }
-        shared = File(File(ctx.cacheDir, "shared").apply { mkdirs() }, "smartgt-log.txt")
+        shared = File(File(ctx.cacheDir, "shared").apply { mkdirs() }, "smartgx-log.txt")
         write("===== START ${SimpleDateFormat("yyyy-MM-dd HH:mm:ss", Locale.US).format(Date())} =====")
         logLastExitReasons(ctx)
         val prev = Thread.getDefaultUncaughtExceptionHandler()
