@@ -4,6 +4,7 @@ import android.Manifest
 import android.app.Activity
 import android.content.Intent
 import android.content.pm.PackageManager
+import android.graphics.BitmapFactory
 import android.graphics.Typeface
 import android.net.Uri
 import android.os.Build
@@ -13,6 +14,7 @@ import android.provider.Settings
 import android.view.View
 import android.view.WindowManager
 import android.widget.Button
+import android.widget.ImageView
 import android.widget.LinearLayout
 import android.widget.ScrollView
 import android.widget.TextView
@@ -29,7 +31,10 @@ class SmartGxActivity : Activity() {
     private lateinit var logView: TextView
     private lateinit var scroll: ScrollView
     private lateinit var startBtn: Button
+    private lateinit var testBtn: Button
+    private lateinit var preview: ImageView
     private var running = false
+    private var testRunning = false
     private val fmt = SimpleDateFormat("HH:mm:ss.SSS", Locale.US)
 
     override fun onCreate(savedInstanceState: Bundle?) {
@@ -45,6 +50,14 @@ class SmartGxActivity : Activity() {
                 startActivity(Intent(this@SmartGxActivity, com.andrerinas.openheadunit.main.MainActivity::class.java))
             }
         }
+        testBtn = Button(this).apply {
+            text = "Test AA (no motorcycle)"
+            setOnClickListener { toggleTest() }
+        }
+        preview = ImageView(this).apply {
+            scaleType = ImageView.ScaleType.FIT_CENTER
+            setBackgroundColor(android.graphics.Color.BLACK)
+        }
         logView = TextView(this).apply { typeface = Typeface.MONOSPACE; textSize = 11f; setTextIsSelectable(true) }
         scroll = ScrollView(this).apply { addView(logView) }
         val root = LinearLayout(this).apply {
@@ -56,11 +69,15 @@ class SmartGxActivity : Activity() {
                 addView(shareBtn, LinearLayout.LayoutParams(0, -2, 1f))
             })
             addView(aaBtn)
+            addView(testBtn)
+            addView(preview, LinearLayout.LayoutParams(-1, (120 * resources.displayMetrics.density).toInt()))
             addView(scroll, LinearLayout.LayoutParams(-1, 0, 1f))
         }
         setContentView(root)
         append("SmartGX ready. Turn on BT, Wi-Fi and location, close the official mySPIN app, then press Start.")
         append("Log file: ${getExternalFilesDir(null)}/smartgx-log.txt")
+        append("Tip: 'Test AA (no motorcycle)' reproduces the TFT capture pipeline (GL/SmartGxBridge) " +
+            "without pairing to the bike - use it to iterate on crashes/rendering from the couch.")
     }
 
     override fun onStart() {
@@ -113,6 +130,62 @@ class SmartGxActivity : Activity() {
         logView.append(t)
         if (logView.length() > 60_000) logView.text = logView.text.takeLast(40_000)
         scroll.post { scroll.fullScroll(View.FOCUS_DOWN) }
+    }
+
+    /**
+     * Reproduces exactly the code path that crashed in the field (AA self-mode session feeding
+     * SmartGxBridge/GL), without needing the motorcycle's Bluetooth/Wi-Fi Direct/TCP handshake at
+     * all - MySpinLink.startAndroidAuto() does the same SmartGxBridge setup, just gated behind
+     * that whole mySPIN connection. Captured frames are shown live in [preview] so rendering bugs
+     * (orientation, color, scaling) are visible here too, not just crashes.
+     */
+    private fun toggleTest() {
+        if (testRunning) stopTest() else startTest()
+    }
+
+    private fun startTest() {
+        SmartGxBridge.log = { msg -> runOnUiThread { append(msg, toFile = false) } }
+        try {
+            val st = com.andrerinas.openheadunit.App.provide(this).settings
+            st.resolutionId = 1
+            st.screenOrientation = com.andrerinas.openheadunit.utils.Settings.ScreenOrientation.LANDSCAPE
+        } catch (e: Exception) { append("TEST: failed to set resolution: ${e.message}") }
+        SmartGxBridge.readerW = 800; SmartGxBridge.readerH = 480
+        SmartGxBridge.targetW = 864; SmartGxBridge.targetH = 320
+        SmartGxBridge.fitContain = true
+        SmartGxBridge.showFpsOverlay = true
+        SmartGxBridge.latestJpeg = null
+        SmartGxBridge.enabled = true
+        SmartGxBridge.onFrame = {
+            val jpeg = SmartGxBridge.latestJpeg
+            if (jpeg != null) {
+                val bmp = BitmapFactory.decodeByteArray(jpeg, 0, jpeg.size)
+                if (bmp != null) runOnUiThread { preview.setImageBitmap(bmp) }
+            }
+        }
+        try {
+            val i = Intent(this, com.andrerinas.openheadunit.aap.AapService::class.java)
+                .setAction(com.andrerinas.openheadunit.aap.AapService.ACTION_START_SELF_MODE)
+            ContextCompat.startForegroundService(this, i)
+            append("TEST: Android Auto self-mode started (864x320 TFT emulation, no motorcycle needed)")
+        } catch (e: Exception) { append("TEST: failed to start: ${e.message}") }
+        testRunning = true
+        testBtn.text = "Stop test"
+    }
+
+    private fun stopTest() {
+        SmartGxBridge.enabled = false
+        SmartGxBridge.onFrame = null
+        try {
+            val i = Intent(this, com.andrerinas.openheadunit.aap.AapService::class.java)
+                .setAction(com.andrerinas.openheadunit.aap.AapService.ACTION_STOP_SELF_MODE)
+            startService(i)
+        } catch (e: Exception) { append("TEST: stop error: ${e.message}") }
+        SmartGxBridge.release()
+        preview.setImageDrawable(null)
+        append("TEST: stopped")
+        testRunning = false
+        testBtn.text = "Test AA (no motorcycle)"
     }
 
     private fun shareLog() {
