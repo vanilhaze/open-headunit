@@ -20,6 +20,8 @@ import android.net.wifi.p2p.WifiP2pDevice
 import android.net.wifi.p2p.WifiP2pManager
 import android.os.Build
 import android.os.Looper
+import android.os.SystemClock
+import android.view.KeyEvent
 import androidx.core.content.ContextCompat
 import org.json.JSONException
 import org.json.JSONObject
@@ -799,21 +801,37 @@ class MySpinLink(private val ctx: Context, private val log: (String) -> Unit) {
             else log("SOURCE($mode): key $key (not yet handled)")
             return
         }
-        val android = when (key) {
-            30, 21 -> 19   // DPAD_UP  (joystick up / knob CCW)
-            31, 20 -> 20   // DPAD_DOWN
-            32 -> 21       // DPAD_LEFT
-            33 -> 22       // DPAD_RIGHT
-            12 -> 23       // DPAD_CENTER (OK)
-            14 -> 4        // BACK
-            else -> 0
+        // Up/down (joystick up-down or knob CW/CCW) move the highlight inside an Android Auto
+        // list. AA's list widgets listen for the relative/scroll input channel for that, not a
+        // discrete D-pad key - a plain DPAD_UP/DOWN KeyEvent is simply not bound to anything in
+        // most templates, which is why "up/down does nothing" while left/right (a real discrete
+        // D-pad event, used by AA to move focus between panes) visibly does something. AapTransport
+        // already turns KEYCODE_SOFT_LEFT/SOFT_RIGHT presses into a scroll-wheel delta instead of a
+        // key event (see AapTransport.send) - reuse that existing channel here rather than adding a
+        // new one.
+        val isScroll: Boolean
+        val androidKey = when (key) {
+            30, 21 -> { isScroll = true; KeyEvent.KEYCODE_SOFT_LEFT }   // up / knob CCW -> scroll delta -1
+            31, 20 -> { isScroll = true; KeyEvent.KEYCODE_SOFT_RIGHT }  // down / knob CW -> scroll delta +1
+            32 -> { isScroll = false; 21 }   // DPAD_LEFT
+            33 -> { isScroll = false; 22 }   // DPAD_RIGHT
+            12 -> { isScroll = false; 23 }   // DPAD_CENTER (OK)
+            14 -> { isScroll = false; 4 }    // BACK
+            else -> { isScroll = false; 0 }
         }
-        if (android == 0) return
-        log("AA: TFT key $key -> Android $android")
+        if (androidKey == 0) return
+        log("AA: TFT key $key -> Android $androidKey${if (isScroll) " (scroll)" else ""}")
         try {
             val cm = com.andrerinas.openheadunit.App.provide(ctx).commManager
-            cm.sendKey(android, true, null, "smartgx")
-            mainHandler.postDelayed({ cm.sendKey(android, false, null, "smartgx") }, 50)
+            // A fresh downTime per press gives KeyDebouncePolicy a real identity for this event, so
+            // turning the knob several times quickly is never read as one press "debounced" against
+            // the last - that matters most for scroll, which has no separate repeat mechanism of its
+            // own, but is harmless (and consistent) for the discrete keys too.
+            val downTime = SystemClock.elapsedRealtime()
+            cm.sendKey(androidKey, true, downTime, "smartgx")
+            if (!isScroll) {
+                mainHandler.postDelayed({ cm.sendKey(androidKey, false, downTime, "smartgx") }, 50)
+            }
         } catch (e: Exception) { log("AA: error sending key: ${e.message}") }
     }
 

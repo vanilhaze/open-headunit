@@ -2477,6 +2477,20 @@ class AapProjectionActivity : SurfaceActivity(), IProjectionView.Callbacks, Vide
         }
         // Use the same screen conf for both views for negotiation
         HeadUnitScreenConfig.init(this, displayMetrics, settings)
+        if (com.andrerinas.openheadunit.smartgx.SmartGxBridge.enabled) {
+            // HeadUnitScreenConfig.init() just measured *this phone's* window - the right panel for
+            // the normal head-unit case, where the activity is shown full-screen on the hardware it
+            // projects onto. SmartGX instead renders Android Auto offscreen and forwards it over
+            // mySPIN to the motorcycle's own TFT, so the panel Android Auto should negotiate a video
+            // size for is the TFT (SmartGxBridge.targetW/targetH, learned from the motorcycle's own
+            // ClientInit packet - see MySpinLink), not whatever shape this activity's window happens
+            // to have on the phone. Re-anchor to that before service discovery reads it.
+            val tftW = com.andrerinas.openheadunit.smartgx.SmartGxBridge.targetW
+            val tftH = com.andrerinas.openheadunit.smartgx.SmartGxBridge.targetH
+            AppLog.w("[AapProjectionActivity] SmartGX bridge active: re-anchoring HeadUnitScreenConfig " +
+                    "to the motorcycle TFT's ${tftW}x${tftH} instead of this phone's own display")
+            HeadUnitScreenConfig.updateSurfaceDimensions(tftW, tftH)
+        }
 
         val view = projectionView as View
         container.addView(view)
