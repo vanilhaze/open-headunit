@@ -68,7 +68,7 @@ class HomeFragment : Fragment() {
 
     private val vpnPermissionLauncher = registerForActivityResult(ActivityResultContracts.StartActivityForResult()) { result ->
         if (result.resultCode == android.app.Activity.RESULT_OK) {
-            AppLog.i("VPN permission granted. Starting DummyVpnService and Self Mode.")
+            AppLog.w("VPN permission granted. Starting DummyVpnService and Self Mode.")
             VpnControl.startVpn(requireContext());
             startSelfModeInternal()
         } else {
@@ -232,9 +232,14 @@ class HomeFragment : Fragment() {
         val offline = activeNetwork == null
 
         if (SelfLaunchRoutePolicy.needsDummyVpn(path, offline, VpnControl.isVpnAvailable())) {
-            AppLog.i("Device is offline. Preparing Dummy VPN for Self Mode.")
+            AppLog.w("Device is offline (no internet-validated network - normal once paired to the " +
+                    "motorcycle's own Wi-Fi). Preparing Dummy VPN for Self Mode.")
             val vpnIntent = VpnControl.consentIntent(requireContext())
             if (vpnIntent != null) {
+                AppLog.w("SelfMode: Android needs a one-time VPN permission to fake network access " +
+                        "while offline. A system dialog should now be showing on the PHONE SCREEN - " +
+                        "look at the phone and tap 'OK'/'Allow', otherwise nothing will ever reach the " +
+                        "motorcycle screen. This is normally asked only once per install.")
                 vpnPermissionLauncher.launch(vpnIntent)
                 return
             } else {
