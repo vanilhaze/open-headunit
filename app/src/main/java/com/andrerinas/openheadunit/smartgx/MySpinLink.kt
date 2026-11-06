@@ -51,6 +51,8 @@ class MySpinLink(private val ctx: Context, private val log: (String) -> Unit) {
         val MYSPIN_UUID: UUID = UUID.fromString("31FD954E-8138-4367-A201-0276B9716FB1")
         const val DEFAULT_UDP_PORT = 8158
         const val MODE_SWITCH_COOLDOWN_MS = 700L
+        const val AA_CONNECT_TIMEOUT_MS = 12_000L  // no first frame ever arrived since the session was requested
+        const val AA_FREEZE_TIMEOUT_MS = 10_000L   // had frames, then they stopped (focus lost, backgrounded, crashed)
 
         // The rider's own photo for the menu background, decoded and center-cropped to the TFT's
         // size once, then reused on every menu redraw instead of re-reading/re-scaling the file each
@@ -923,8 +925,22 @@ class MySpinLink(private val ctx: Context, private val log: (String) -> Unit) {
         }
     }
 
-    private fun startAndroidAuto(out: OutputStream) {
-        log("AA: start (self mode)")
+    // Updated from renderDashboardJpeg() whenever SmartGxBridge.frameSeq actually advances, i.e. a
+    // genuinely new AA frame arrived - not just whenever we're asked to render one. Used to tell
+    // "still connecting" apart from "was connected, then AA stopped sending frames" (focus lost to
+    // an incoming call or another app, backgrounded, or crashed) - both look the same to the rider
+    // (a dead/frozen screen) and get the same timeout-then-retry-then-error treatment below.
+    @Volatile private var aaStartRequestedMs = 0L
+    @Volatile private var lastAaFrameAtMs = 0L
+    @Volatile private var aaStaleWarned = false
+    @Volatile private var aaAutoRetried = false
+
+    private fun startAndroidAuto(out: OutputStream, isRetry: Boolean = false) {
+        log("AA: start (self mode)" + if (isRetry) " [auto-retry after no response]" else "")
+        aaStartRequestedMs = System.currentTimeMillis()
+        lastAaFrameAtMs = 0L
+        aaStaleWarned = false
+        if (!isRetry) aaAutoRetried = false
         SmartGxBridge.log = log
         try {
             // Force landscape 800x480 (AA defaulted to portrait 1080x1920 based on the phone's size).
@@ -969,7 +985,7 @@ class MySpinLink(private val ctx: Context, private val log: (String) -> Unit) {
         // MySpinLink shutdown), not here.
     }
 
-    private fun renderModeScreen(): ByteArray? {
+    private fun renderModeScreen(out: OutputStream): ByteArray? {
         try {
             val bmp = Bitmap.createBitmap(screenWidth, screenHeight, Bitmap.Config.RGB_565)
             val c = Canvas(bmp)
@@ -994,9 +1010,34 @@ class MySpinLink(private val ctx: Context, private val log: (String) -> Unit) {
                     c.drawText("Screen FPS: %.1f".format(sendFps), 30f, 230f, p)
                 }
                 Mode.ANDROID_AUTO -> {
-                    // This screen (renderModeScreen) is only drawn until the first AA frame arrives.
-                    c.drawText("Connecting to Android Auto…", 30f, 120f, p)
-                    c.drawText("The phone must have the server / self mode running.", 30f, 160f, p)
+                    // Drawn whenever renderDashboardJpeg() has no fresh AA frame to show: either we
+                    // never got a first frame yet, or we did but AA went silent (focus lost to a call
+                    // or another app, backgrounded, crashed). Same visual problem for the rider either
+                    // way (a dead screen), so the same timeout -> one auto-retry -> error flow applies.
+                    val now = System.currentTimeMillis()
+                    val neverConnected = lastAaFrameAtMs == 0L
+                    val staleSince = if (neverConnected) now - aaStartRequestedMs else now - lastAaFrameAtMs
+                    val timeout = if (neverConnected) AA_CONNECT_TIMEOUT_MS else AA_FREEZE_TIMEOUT_MS
+                    when {
+                        staleSince <= timeout -> {
+                            c.drawText("Connecting to Android Auto…", 30f, 120f, p)
+                            c.drawText("The phone must have the server / self mode running.", 30f, 160f, p)
+                        }
+                        !aaAutoRetried -> {
+                            aaAutoRetried = true
+                            log("AA: ${if (neverConnected) "never connected" else "frozen"} after ${staleSince}ms - retrying once")
+                            stopAndroidAuto()
+                            startAndroidAuto(out, isRetry = true)
+                            c.drawText("Android Auto nie odpowiada - próbuję ponownie...", 30f, 120f, p)
+                        }
+                        else -> {
+                            p.color = Color.rgb(220, 90, 90)
+                            c.drawText("Nie udało się połączyć z Android Auto.", 30f, 120f, p)
+                            p.color = Color.WHITE
+                            c.drawText("Sprawdź telefon (Android Auto zainstalowane i uruchomione),", 30f, 158f, p)
+                            c.drawText("albo przytrzymaj joystick w lewo, aby wrócić do menu.", 30f, 193f, p)
+                        }
+                    }
                 }
                 else -> {
                     c.drawText("Coming soon - source not connected yet.", 30f, 120f, p)
@@ -1052,7 +1093,7 @@ class MySpinLink(private val ctx: Context, private val log: (String) -> Unit) {
             pendingReq = false
             try {
                 if (dirty || cachedJpeg == null) {
-                    cachedJpeg = renderDashboardJpeg()
+                    cachedJpeg = renderDashboardJpeg(out)
                     dirty = false
                 }
                 cachedJpeg?.let {
@@ -1077,13 +1118,30 @@ class MySpinLink(private val ctx: Context, private val log: (String) -> Unit) {
         }
     }
 
-    private fun renderDashboardJpeg(): ByteArray? {
+    private fun renderDashboardJpeg(out: OutputStream): ByteArray? {
         if (mode == Mode.ANDROID_AUTO) {
-            val f = SmartGxBridge.latestJpeg
-            lastAaSeq = SmartGxBridge.frameSeq
-            return f ?: renderModeScreen()
+            val seq = SmartGxBridge.frameSeq
+            val now = System.currentTimeMillis()
+            if (seq != lastAaSeq) {
+                // A genuinely new frame - not just another request to render the same one.
+                lastAaSeq = seq
+                lastAaFrameAtMs = now
+                aaStaleWarned = false
+            }
+            val neverConnected = lastAaFrameAtMs == 0L
+            val staleSince = if (neverConnected) now - aaStartRequestedMs else now - lastAaFrameAtMs
+            val timeout = if (neverConnected) AA_CONNECT_TIMEOUT_MS else AA_FREEZE_TIMEOUT_MS
+            if (staleSince > timeout) {
+                // Past the grace period: let renderModeScreen() decide retry vs. error and draw it.
+                return renderModeScreen(out)
+            }
+            if (!neverConnected && staleSince > AA_FREEZE_TIMEOUT_MS / 2 && !aaStaleWarned) {
+                aaStaleWarned = true
+                log("AA: no new frame for ${staleSince}ms (focus lost? backgrounded? crashed?) - still showing the last one")
+            }
+            return SmartGxBridge.latestJpeg ?: renderModeScreen(out)
         }
-        if (mode != Mode.MENU) return renderModeScreen()
+        if (mode != Mode.MENU) return renderModeScreen(out)
         try {
             val bmp = Bitmap.createBitmap(screenWidth, screenHeight, Bitmap.Config.RGB_565)
             val canvas = Canvas(bmp)
