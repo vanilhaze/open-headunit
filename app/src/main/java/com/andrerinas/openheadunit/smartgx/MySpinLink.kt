@@ -533,13 +533,28 @@ class MySpinLink(private val ctx: Context, private val log: (String) -> Unit) {
                 log("TCP -> Waiting in State 2 for the Capabilities packet (Type 11) from the motorcycle...")
             }
             11 -> {
-                // Read the screen resolution from Packet 11's body (C1822mE: f=width, g=height)
+                // Read the screen resolution from Packet 11's body (C1822mE: f=width, g=height).
+                // The comment on parseClientInitFormat() below documents four u16 fields here -
+                // f, g, h, i - and its own offset math (+8 for all four) already assumes that; we
+                // only ever read the first pair (f, g). If f/g is a "logical" size and h/i is a
+                // separate "physical" panel size (the two aren't necessarily the same value on
+                // every mySPIN screen), using only f/g is correct here only because they happen to
+                // match on this TFT. Logging h/i too (without changing behavior) so a real capture
+                // from the bike confirms whether they ever diverge, before basing anything on them.
                 if (body.size >= 7) {
                     val nameLen = (body[1].toInt() and 0xFF) or ((body[2].toInt() and 0xFF) shl 8)
                     val offset = 3 + nameLen
                     if (body.size >= offset + 4) {
                         val w = (body[offset].toInt() and 0xFF) or ((body[offset + 1].toInt() and 0xFF) shl 8)
                         val h = (body[offset + 2].toInt() and 0xFF) or ((body[offset + 3].toInt() and 0xFF) shl 8)
+                        if (body.size >= offset + 8) {
+                            val h2 = (body[offset + 4].toInt() and 0xFF) or ((body[offset + 5].toInt() and 0xFF) shl 8)
+                            val i2 = (body[offset + 6].toInt() and 0xFF) or ((body[offset + 7].toInt() and 0xFF) shl 8)
+                            if (h2 != w || i2 != h) {
+                                log("ClientInit: fields 3/4 (h,i) are ${h2}x$i2, different from fields 1/2 (f,g) ${w}x$h - " +
+                                        "worth a closer look at which one the framebuffer should actually use")
+                            }
+                        }
                         if (w > 0 && h > 0) {
                             screenWidth = w
                             screenHeight = h

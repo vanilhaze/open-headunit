@@ -66,7 +66,21 @@ internal class AapControlMedia(
                     // is already caught by MySpinLink's own freeze-timeout-and-retry.
                     if (com.andrerinas.openheadunit.smartgx.SmartGxBridge.enabled) {
                         AppLog.i("Video Focus NATIVE received during a SmartGX session - " +
-                                "ignoring the phone-side exit action (reason: ${focusRequest.reason})")
+                                "ignoring the phone-side exit action (reason: ${focusRequest.reason}), " +
+                                "asking to regain focus instead")
+                        // Don't just wait out MySpinLink's freeze timeout if there's a cheap way to
+                        // ask for the screen back right away: gainVideoFocus() re-broadcasts the
+                        // same "bring the projection activity to the foreground" request normally
+                        // sent on media sink setup (see AapTransport.gainVideoFocus / MainActivity's
+                        // comment on ProjectionActivityRequest), which is how this app's side of the
+                        // self-mode session tells Android Auto it's visible and ready for PROJECTED
+                        // focus again. Harmless if AA ignores it (e.g. a call still has focus) - the
+                        // staleness-based retry in MySpinLink still catches that case either way.
+                        try {
+                            aapTransport.gainVideoFocus()
+                        } catch (e: Exception) {
+                            AppLog.w("SmartGX: gainVideoFocus() after NATIVE focus failed: ${e.message}")
+                        }
                         return 0
                     }
                     AppLog.i("Video Focus NATIVE received. User clicked Exit in Android Auto.")
