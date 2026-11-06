@@ -2303,6 +2303,11 @@ class Settings(private val context: Context) {
         get() = prefs.getBoolean("enable-rotary", false)
         set(value) { prefs.edit().putBoolean("enable-rotary", value).apply() }
 
+    /** content:// URI of the user's own picture for the SmartGX menu background, or null for the plain default. */
+    var smartGxWallpaperUri: String?
+        get() = prefs.getString("smartgx-wallpaper-uri", null)
+        set(value) { prefs.edit().putString("smartgx-wallpaper-uri", value).apply() }
+
     var killOnDisconnect: Boolean
         get() {
             if (isCarLauncherActive) return false

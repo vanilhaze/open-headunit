@@ -268,6 +268,40 @@ object AppLog {
 
     private fun log(priority: Int, msg: String) {
         LOGGER.println(priority, TAG, msg)
+        forwardToSmartGxLog(priority, msg)
+    }
+
+    /**
+     * Mirrors warnings/errors into the SmartGX debug screen (SmartGxActivity), which has its own
+     * log view (FileLog/LogBus) that AppLog normally never reaches. Self-mode Android Auto launch
+     * progress (SelfLauncherManager and its launchers) logs exclusively through AppLog, so without
+     * this a failed/stuck self-mode launch is invisible anywhere except adb logcat. INFO/DEBUG/
+     * VERBOSE are deliberately not forwarded - those can be several lines per frame during a real
+     * driving session, which would flood the debug screen for no benefit.
+     *
+     * [FileLog.write] is what actually lands in the exported smartgx-log.txt a field test shares
+     * back; [LogBus.post] only pushes to a live listener (SmartGxActivity's TextView) while that
+     * screen happens to be open, and is never persisted. The first version of this bridge called
+     * only LogBus.post, so a whole round of on-bike tests came back with zero of these lines even
+     * though the code paths that log them (confirmed by reading the exact commit each APK was
+     * built from) clearly ran - every one of them was shown live, if anyone was staring at the
+     * phone at the time, and then lost. Both are called now so the lines actually reach the file.
+     */
+    private fun forwardToSmartGxLog(priority: Int, msg: String) {
+        val level = when (priority) {
+            Log.WARN -> "W"
+            Log.ERROR -> "E"
+            else -> return
+        }
+        val line = "APPLOG[$level]: $msg"
+        try {
+            com.andrerinas.openheadunit.smartgx.FileLog.write(line)
+        } catch (_: Throwable) {
+        }
+        try {
+            com.andrerinas.openheadunit.smartgx.LogBus.post(line)
+        } catch (_: Throwable) {
+        }
     }
 
     private fun isLoggable(priority: Int): Boolean = priority >= LOG_LEVEL
@@ -282,7 +316,9 @@ object AppLog {
      */
     private fun loge(message: String, tr: Throwable?) {
         val trace = if (tr != null) Log.getStackTraceString(tr) else ""
-        LOGGER.println(Log.ERROR, TAG, if (trace.isEmpty()) message else "$message\n$trace")
+        val full = if (trace.isEmpty()) message else "$message\n$trace"
+        LOGGER.println(Log.ERROR, TAG, full)
+        forwardToSmartGxLog(Log.ERROR, message) // trace omitted from the debug screen, keep it short
     }
 
     private fun closeAppLogFileLogger() {

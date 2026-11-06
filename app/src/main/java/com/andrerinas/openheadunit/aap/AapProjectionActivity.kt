@@ -2012,14 +2012,17 @@ class AapProjectionActivity : SurfaceActivity(), IProjectionView.Callbacks, Vide
 
     override fun onSurfaceChanged(surface: android.view.Surface, width: Int, height: Int) {
         AppLog.i("[UI_DEBUG] [AapProjectionActivity] onSurfaceChanged. Actual surface dimensions: width=$width, height=$height")
+        // SmartGX: gdy wlaczony most, dekoder renderuje do ImageReadera (klatki ida na ekran motocykla)
+        val target = if (com.andrerinas.openheadunit.smartgx.SmartGxBridge.enabled)
+            com.andrerinas.openheadunit.smartgx.SmartGxBridge.surface() else surface
         val surfaceChanged = relaunchRecovery.onSurfaceChanged(
-            ownedSurface !== surface || !videoDecoder.isCurrentSurface(surface),
+            ownedSurface !== target || !videoDecoder.isCurrentSurface(target),
             videoDecoder.surfaceStopGeneration,
         )
         isSurfaceSet = true
 
-        videoDecoder.setSurface(surface)
-        ownedSurface = surface
+        videoDecoder.setSurface(target)
+        ownedSurface = target
         if (surfaceChanged) {
             // A replacement target must not strand a pending gain. A resize of the same
             // target must leave the deliberate release/regain gap intact.
@@ -2136,7 +2139,13 @@ class AapProjectionActivity : SurfaceActivity(), IProjectionView.Callbacks, Vide
 
 
     override fun onVideoDimensionsChanged(width: Int, height: Int) {
-        AppLog.i("[AapProjectionActivity] Received video dimensions: ${width}x$height")
+        // WARN (not INFO) so this reaches the on-device SmartGX debug log without logcat: the
+        // aspect-ratio complaint needs to know whether AA actually negotiated something other
+        // than the 800x480 SmartGxBridge.readerW/readerH assumes.
+        val bridgeReader = "${com.andrerinas.openheadunit.smartgx.SmartGxBridge.readerW}x${com.andrerinas.openheadunit.smartgx.SmartGxBridge.readerH}"
+        AppLog.w("[AapProjectionActivity] AA negotiated video dimensions: ${width}x$height " +
+                "(we requested $bridgeReader - SmartGxBridge now resizes its render target to the real size)")
+        com.andrerinas.openheadunit.smartgx.SmartGxBridge.onVideoDimensions(width, height)
         runOnUiThread {
             projectionView.setVideoSize(width, height)
             ProjectionViewScaler.updateScale(projectionView as View, width, height)
@@ -2468,6 +2477,20 @@ class AapProjectionActivity : SurfaceActivity(), IProjectionView.Callbacks, Vide
         }
         // Use the same screen conf for both views for negotiation
         HeadUnitScreenConfig.init(this, displayMetrics, settings)
+        if (com.andrerinas.openheadunit.smartgx.SmartGxBridge.enabled) {
+            // HeadUnitScreenConfig.init() just measured *this phone's* window - the right panel for
+            // the normal head-unit case, where the activity is shown full-screen on the hardware it
+            // projects onto. SmartGX instead renders Android Auto offscreen and forwards it over
+            // mySPIN to the motorcycle's own TFT, so the panel Android Auto should negotiate a video
+            // size for is the TFT (SmartGxBridge.targetW/targetH, learned from the motorcycle's own
+            // ClientInit packet - see MySpinLink), not whatever shape this activity's window happens
+            // to have on the phone. Re-anchor to that before service discovery reads it.
+            val tftW = com.andrerinas.openheadunit.smartgx.SmartGxBridge.targetW
+            val tftH = com.andrerinas.openheadunit.smartgx.SmartGxBridge.targetH
+            AppLog.w("[AapProjectionActivity] SmartGX bridge active: re-anchoring HeadUnitScreenConfig " +
+                    "to the motorcycle TFT's ${tftW}x${tftH} instead of this phone's own display")
+            HeadUnitScreenConfig.updateSurfaceDimensions(tftW, tftH)
+        }
 
         val view = projectionView as View
         container.addView(view)

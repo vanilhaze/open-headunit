@@ -1191,7 +1191,17 @@ class CommManager(
      */
     fun sendKey(keyCode: Int, isPress: Boolean, downTime: Long? = null, source: String = "unknown") {
         if (_connectionState.value !is ConnectionState.TransportStarted) {
+            // smartgx gets its own tag at WARN so it reaches the on-device SmartGX debug log
+            // without turning up the verbosity of every other key source (BT remote, etc.).
+            if (source == "smartgx") {
+                AppLog.w("CommManager: smartgx key $keyCode (isPress=$isPress) DROPPED - " +
+                        "connectionState=${_connectionState.value} is not TransportStarted")
+            }
             return
+        }
+        if (source == "smartgx") {
+            AppLog.w("CommManager: smartgx key $keyCode (isPress=$isPress) passed connection check " +
+                    "(connectionState=${_connectionState.value})")
         }
 
         // 1. Remapping (Physical -> Logical)
@@ -1241,6 +1251,9 @@ class CommManager(
 
         if (!decision.forward) {
             AppLog.v("CommManager: Dropping key $logicalCode (isPress=$isPress, src=$source) - ${decision.dropReason}")
+            if (source == "smartgx") {
+                AppLog.w("CommManager: smartgx key $logicalCode (isPress=$isPress) DROPPED by debounce - ${decision.dropReason}")
+            }
             return
         }
 
@@ -1250,6 +1263,9 @@ class CommManager(
         }
 
         AppLog.i("CommManager: TX Key -> AA=$logicalCode (isPress=$isPress) src=$source")
+        if (source == "smartgx") {
+            AppLog.w("CommManager: smartgx key $logicalCode (isPress=$isPress) SENT to AA transport (logicalCode=$logicalCode, transport=${if (_transport != null) "present" else "NULL"})")
+        }
         _transport?.send(logicalCode, isPress)
     }
 
