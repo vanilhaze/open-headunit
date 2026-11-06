@@ -52,8 +52,24 @@ internal class AapControlMedia(
                 AppLog.i("RX: Video Focus Request - mode: %s, reason: %s", focusRequest.mode, focusRequest.reason)
 
                 if (focusRequest.mode == Media.VideoFocusMode.VIDEO_FOCUS_NATIVE) {
-                    AppLog.i("Video Focus NATIVE received. User clicked Exit in Android Auto.")
                     val ctx = aapTransport.context
+                    // A SmartGX session has nowhere for OEM_LAUNCHER/APP_HOME to navigate to (the
+                    // projection isn't shown on the phone's own screen) and, worse, the default
+                    // aaExitAction is DISCONNECT - which would tear the whole AA transport down
+                    // (aapTransport.stop(), wasUserExit=true) the moment the phone's own UI takes
+                    // native video focus for any reason (not just the user tapping Exit - an
+                    // incoming call is a plausible native-focus trigger too), with no way back
+                    // short of the rider re-selecting Android Auto from the TFT menu by hand. Exit
+                    // for SmartGX is driven entirely by the TFT's own joystick/menu (see
+                    // MySpinLink.switchMode/onBackButton), so this phone-side exit action is simply
+                    // skipped here - frames stopping (if this really was a takeover, not a blip)
+                    // is already caught by MySpinLink's own freeze-timeout-and-retry.
+                    if (com.andrerinas.openheadunit.smartgx.SmartGxBridge.enabled) {
+                        AppLog.i("Video Focus NATIVE received during a SmartGX session - " +
+                                "ignoring the phone-side exit action (reason: ${focusRequest.reason})")
+                        return 0
+                    }
+                    AppLog.i("Video Focus NATIVE received. User clicked Exit in Android Auto.")
                     val settings = App.provide(ctx).settings
                     when (settings.aaExitAction) {
                         Settings.ExitAction.OEM_LAUNCHER -> {
