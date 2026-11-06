@@ -35,6 +35,7 @@ class SmartGxActivity : Activity() {
     private lateinit var preview: ImageView
     private var running = false
     private var testRunning = false
+    private val REQUEST_WALLPAPER = 78
     private val fmt = SimpleDateFormat("HH:mm:ss.SSS", Locale.US)
 
     override fun onCreate(savedInstanceState: Bundle?) {
@@ -54,6 +55,18 @@ class SmartGxActivity : Activity() {
             text = "Test AA (no motorcycle)"
             setOnClickListener { toggleTest() }
         }
+        val wallpaperBtn = Button(this).apply {
+            text = "Menu wallpaper: pick a photo"
+            setOnClickListener { pickWallpaper() }
+        }
+        val clearWallpaperBtn = Button(this).apply {
+            text = "Clear"
+            setOnClickListener {
+                com.andrerinas.openheadunit.App.provide(this@SmartGxActivity).settings.smartGxWallpaperUri = null
+                MySpinLink.invalidateWallpaperCache()
+                append("Menu wallpaper: cleared, back to the plain background.")
+            }
+        }
         preview = ImageView(this).apply {
             scaleType = ImageView.ScaleType.FIT_CENTER
             setBackgroundColor(android.graphics.Color.BLACK)
@@ -70,6 +83,11 @@ class SmartGxActivity : Activity() {
             })
             addView(aaBtn)
             addView(testBtn)
+            addView(LinearLayout(context).apply {
+                orientation = LinearLayout.HORIZONTAL
+                addView(wallpaperBtn, LinearLayout.LayoutParams(0, -2, 1f))
+                addView(clearWallpaperBtn, LinearLayout.LayoutParams(0, -2, 1f))
+            })
             addView(preview, LinearLayout.LayoutParams(-1, (120 * resources.displayMetrics.density).toInt()))
             addView(scroll, LinearLayout.LayoutParams(-1, 0, 1f))
         }
@@ -188,6 +206,31 @@ class SmartGxActivity : Activity() {
         append("TEST: stopped")
         testRunning = false
         testBtn.text = "Test AA (no motorcycle)"
+    }
+
+    /** Lets the rider pick their own photo as the SmartGX menu background on the TFT. */
+    private fun pickWallpaper() {
+        try {
+            val i = Intent(Intent.ACTION_OPEN_DOCUMENT).apply {
+                type = "image/*"
+                addCategory(Intent.CATEGORY_OPENABLE)
+            }
+            startActivityForResult(i, REQUEST_WALLPAPER)
+        } catch (e: Exception) { append("Wallpaper: couldn't open picker: ${e.message}") }
+    }
+
+    override fun onActivityResult(requestCode: Int, resultCode: Int, data: Intent?) {
+        super.onActivityResult(requestCode, resultCode, data)
+        if (requestCode != REQUEST_WALLPAPER || resultCode != RESULT_OK) return
+        val uri = data?.data ?: return
+        try {
+            // ACTION_OPEN_DOCUMENT grants only a one-time read; persist it so the picture still
+            // loads for the menu after the phone (or the app) restarts.
+            contentResolver.takePersistableUriPermission(uri, Intent.FLAG_GRANT_READ_URI_PERMISSION)
+        } catch (e: Exception) { append("Wallpaper: couldn't persist access: ${e.message}") }
+        com.andrerinas.openheadunit.App.provide(this).settings.smartGxWallpaperUri = uri.toString()
+        MySpinLink.invalidateWallpaperCache()
+        append("Menu wallpaper: set to $uri")
     }
 
     private fun shareLog() {

@@ -51,6 +51,51 @@ class MySpinLink(private val ctx: Context, private val log: (String) -> Unit) {
         val MYSPIN_UUID: UUID = UUID.fromString("31FD954E-8138-4367-A201-0276B9716FB1")
         const val DEFAULT_UDP_PORT = 8158
 
+        // The rider's own photo for the menu background, decoded and center-cropped to the TFT's
+        // size once, then reused on every menu redraw instead of re-reading/re-scaling the file each
+        // time. Call invalidateWallpaperCache() whenever the chosen picture (or the TFT's reported
+        // size) changes, so the next menu draw picks up the new one.
+        @Volatile private var cachedWallpaper: Bitmap? = null
+        @Volatile private var cachedWallpaperKey: String? = null
+
+        fun invalidateWallpaperCache() {
+            cachedWallpaper?.recycle()
+            cachedWallpaper = null
+            cachedWallpaperKey = null
+        }
+
+        /** Returns the rider's chosen menu background, scaled to [w]x[h], or null for the plain default. */
+        private fun wallpaperFor(ctx: Context, w: Int, h: Int, log: (String) -> Unit): Bitmap? {
+            val uriString = try {
+                com.andrerinas.openheadunit.App.provide(ctx).settings.smartGxWallpaperUri
+            } catch (e: Exception) { null } ?: return null
+            val key = "$uriString@${w}x$h"
+            cachedWallpaper?.let { if (cachedWallpaperKey == key) return it }
+            return try {
+                val uri = android.net.Uri.parse(uriString)
+                val source = ctx.contentResolver.openInputStream(uri)?.use { android.graphics.BitmapFactory.decodeStream(it) }
+                    ?: return null
+                val scale = maxOf(w.toFloat() / source.width, h.toFloat() / source.height)
+                val sw = (source.width * scale).toInt().coerceAtLeast(1)
+                val sh = (source.height * scale).toInt().coerceAtLeast(1)
+                val scaled = android.graphics.Bitmap.createScaledBitmap(source, sw, sh, true)
+                if (scaled !== source) source.recycle()
+                val left = ((sw - w) / 2).coerceAtLeast(0)
+                val top = ((sh - h) / 2).coerceAtLeast(0)
+                val cw = w.coerceAtMost(sw - left)
+                val ch = h.coerceAtMost(sh - top)
+                val cropped = Bitmap.createBitmap(scaled, left, top, cw, ch)
+                if (cropped !== scaled) scaled.recycle()
+                cachedWallpaper?.recycle()
+                cachedWallpaper = cropped
+                cachedWallpaperKey = key
+                cropped
+            } catch (e: Exception) {
+                log("Wallpaper: failed to load $uriString: ${e.message}")
+                null
+            }
+        }
+
         fun writeLE32(out: OutputStream, v: Int) {
             out.write(v and 0xFF)
             out.write((v ushr 8) and 0xFF)
@@ -1022,7 +1067,14 @@ class MySpinLink(private val ctx: Context, private val log: (String) -> Unit) {
             val canvas = Canvas(bmp)
             val p = Paint().apply { isAntiAlias = true }
 
-            canvas.drawColor(Color.rgb(15, 20, 30))
+            val wallpaper = wallpaperFor(ctx, screenWidth, screenHeight, log)
+            if (wallpaper != null) {
+                canvas.drawBitmap(wallpaper, 0f, 0f, null)
+                // Dim the photo so the menu text/cards drawn on top stay legible.
+                canvas.drawColor(Color.argb(140, 10, 12, 18))
+            } else {
+                canvas.drawColor(Color.rgb(15, 20, 30))
+            }
 
             p.color = Color.rgb(30, 40, 60)
             canvas.drawRect(0f, 0f, screenWidth.toFloat(), 50f, p)
