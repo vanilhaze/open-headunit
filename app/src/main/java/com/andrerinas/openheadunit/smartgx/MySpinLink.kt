@@ -50,6 +50,7 @@ class MySpinLink(private val ctx: Context, private val log: (String) -> Unit) {
     companion object {
         val MYSPIN_UUID: UUID = UUID.fromString("31FD954E-8138-4367-A201-0276B9716FB1")
         const val DEFAULT_UDP_PORT = 8158
+        const val MODE_SWITCH_COOLDOWN_MS = 700L
 
         // The rider's own photo for the menu background, decoded and center-cropped to the TFT's
         // size once, then reused on every menu redraw instead of re-reading/re-scaling the file each
@@ -829,7 +830,28 @@ class MySpinLink(private val ctx: Context, private val log: (String) -> Unit) {
     @Volatile private var lastAaSeq = -1L
     private val mainHandler = android.os.Handler(Looper.getMainLooper())
 
+    @Volatile private var lastModeSwitchMs = 0L
+
+    /**
+     * startAndroidAuto()/stopAndroidAuto() below just fire-and-forget an Intent at AapService and
+     * flip SmartGxBridge's state; neither waits for the self-mode session to actually settle. A
+     * quick menu -> AA -> menu -> AA round trip (someone mashing OK, or a stray double BACK) used
+     * to be able to fire a stop right as a start was still spinning up, or the reverse - the exact
+     * class of bug that left the TFT stuck on "Connecting to Android Auto..." forever even with a
+     * healthy mySPIN link (see the long comment in stopAndroidAuto()). Give each transition a short
+     * window to settle before another one is allowed through, instead of queuing them back to back.
+     */
     private fun switchMode(newMode: Mode, out: OutputStream) {
+        if (newMode != mode) {
+            val now = System.currentTimeMillis()
+            val elapsed = now - lastModeSwitchMs
+            if (elapsed < MODE_SWITCH_COOLDOWN_MS) {
+                log("MODE: ignoring $mode -> $newMode, only ${elapsed}ms after the last switch " +
+                        "(AA start/stop needs a moment to settle)")
+                return
+            }
+            lastModeSwitchMs = now
+        }
         log("MODE: $mode -> $newMode")
         val old = mode
         mode = newMode
