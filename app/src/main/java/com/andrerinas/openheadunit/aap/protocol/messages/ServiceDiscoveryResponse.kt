@@ -176,10 +176,25 @@ internal class ServiceDiscoveryResponse(context: Context, audioConfig: AudioSess
             val input = Control.Service.newBuilder().also { service ->
                 service.id = Channel.ID_INP
                 service.inputSourceService = Control.Service.InputSourceService.newBuilder().also {
-                    it.touchscreen = Control.Service.InputSourceService.TouchConfig.newBuilder().apply {
-                        setWidth(HeadUnitScreenConfig.getNegotiatedWidth()) // Use negotiated width
-                        setHeight(HeadUnitScreenConfig.getNegotiatedHeight()) // Use negotiated height
-                    }.build()
+                    // The motorcycle TFT (SmartGX) has a joystick + knob, not a touchscreen - no
+                    // TouchEvent is ever actually sent from it (MySpinLink only ever calls
+                    // CommManager.sendKey()). Announcing a touchscreen anyway tells Android Auto a
+                    // real touch panel is present, which pushes its own apps (Maps search, the
+                    // dialer, etc.) toward tap-driven on-screen keyboards instead of the D-pad/
+                    // rotary-navigable ones built for touch-less head units - with the joystick
+                    // never able to actually tap anything, those keyboards are unusable. Skipping
+                    // this capability for a SmartGX session lets Android Auto fall back to its
+                    // normal D-pad/rotary input path everywhere, keyboards included.
+                    val smartGxActive = com.andrerinas.openheadunit.smartgx.SmartGxBridge.enabled
+                    if (!smartGxActive) {
+                        it.touchscreen = Control.Service.InputSourceService.TouchConfig.newBuilder().apply {
+                            setWidth(HeadUnitScreenConfig.getNegotiatedWidth()) // Use negotiated width
+                            setHeight(HeadUnitScreenConfig.getNegotiatedHeight()) // Use negotiated height
+                        }.build()
+                    } else {
+                        AppLog.i("[ServiceDiscovery] SmartGX active: not announcing a touchscreen " +
+                                "(TFT is joystick/knob-only) - Android Auto should use its D-pad/rotary UI")
+                    }
 
                     if (settings.enableRotary) {
                         AppLog.i("[ServiceDiscovery] Announcing Rotary/Touchpad support")
